@@ -47,7 +47,7 @@ export default async function Repair({ params, searchParams }) {
 
   return (
     <>
-      <Link href="/repairs" className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ Repairs</Link>
+      <div className="row"><Link href="/repairs" className="btn ghost small">‹ Repairs</Link><Link href={`/repairs/${id}/print`} className="btn ghost small">Print works order</Link></div>
       <div className="row"><div className="pagehead"><h1>{r.category}</h1><span className="sub"><Link href={'/properties/' + r.properties.id}>{r.properties.address_line1}, {r.properties.postcode}</Link></span></div><span className={'pill ' + st[0]}>{st[1]}</span></div>
       {sp.saved && <div className="note" role="status">{sp.saved}</div>}
       {sp.error && <div className="error" role="alert">{sp.error}</div>}

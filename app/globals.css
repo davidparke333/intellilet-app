@@ -142,3 +142,20 @@ input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height:
 .formsection { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
 .formsection > h4 { margin: 0; font-size: 15px; }
 .hint { color: var(--muted); font-size: 13px; font-weight: 400; }
+/* printable sheets (works order) */
+.sheet { background: #fff; color: #111; border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 16px; font-size: 15px; }
+.sheet h1 { font-size: 24px; margin: 0; }
+.sheet .grid2 { align-items: start; }
+.sheet dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.sheet dt { font-weight: 600; color: #444; }
+.sheet dd { margin: 0; }
+.sheet .box { border: 1px solid #ccc; border-radius: 8px; padding: 12px 14px; }
+.sheet .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 8px; }
+.sheet .sign div { border-top: 1px solid #999; padding-top: 6px; font-size: 13px; color: #444; min-height: 40px; }
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: #fff !important; }
+  .noprint, .topbar, nav { display: none !important; }
+  .sheet { border: 0; padding: 0; border-radius: 0; }
+  .sheet .grid2 { grid-template-columns: 1fr 1fr; }
+}
