@@ -90,8 +90,13 @@ export async function quoteDecision(id, _prev, fd) {
 // ---- work done, invoice, approve, pay ----
 export async function workDone(id, _prev, fd) {
   const { sb, member } = await staffOnly();
-  const { data: r } = await sb.from('repairs').select('contractor_id').eq('id', id).single();
-  const labour = pence(fd, 'labour') ?? 0, parts = pence(fd, 'parts') ?? 0, vat = pence(fd, 'vat') ?? 0;
+  const { data: r } = await sb.from('repairs').select('contractor_id, contractors(*)').eq('id', id).single();
+  const vatReg = !!(r && r.contractors && r.contractors.vat_registered);
+  for (const k of ['labour', 'parts', 'vat']) if (txt(fd, k) && pence(fd, k) === null) return fail(fd, 'The ' + k + ' amount must be a number, like 120.50');
+  const labour = pence(fd, 'labour') ?? 0, parts = pence(fd, 'parts') ?? 0;
+  // VAT-registered: blank VAT box means 20% of labour + parts. Not registered: no VAT allowed.
+  const vat = vatReg ? (pence(fd, 'vat') ?? Math.round((labour + parts) * 0.2)) : 0;
+  if (!vatReg && pence(fd, 'vat')) return fail(fd, 'This contractor is not VAT registered, so VAT can\'t be added. If they are, tick VAT registered in Trades');
   if (!txt(fd, 'work_done')) return fail(fd, 'Say what was done');
   try {
     const { error } = await sb.from('invoices').insert({ agency_id: member.agency_id, repair_id: id, contractor_id: r.contractor_id, reference: txt(fd, 'reference') || null,
@@ -157,12 +162,14 @@ export async function addContractor(_prev, fd) {
   if (!txt(fd, 'name')) return fail(fd, 'Enter the contractor\'s name');
   const trades = TRADES.filter((t) => fd.get('trade_' + t) === 'on');
   if (!trades.length) return fail(fd, 'Tick at least one trade');
+  if (txt(fd, 'rate') && pence(fd, 'rate') === null) return fail(fd, 'The hourly rate must be a number, like 45');
   try {
     const { data: c, error } = await sb.from('contacts').insert({ agency_id: member.agency_id, kind: 'company', full_name: txt(fd, 'name'), email: txt(fd, 'email') || null, phone: txt(fd, 'phone') || null }).select('id').single();
     if (error) throw new Error(error.message);
     const { error: e2 } = await sb.from('contractors').insert({ agency_id: member.agency_id, contact_id: c.id, trades, hourly_rate_pence: pence(fd, 'rate'),
       availability: txt(fd, 'availability') === '24h' ? '24h' : 'office', areas: txt(fd, 'areas') || null, insurance_expires: txt(fd, 'insurance_expires') || null,
-      gas_safe_number: txt(fd, 'gas_safe_number') || null, niceic_number: txt(fd, 'niceic_number') || null, status: 'approved' });
+      gas_safe_number: txt(fd, 'gas_safe_number') || null, niceic_number: txt(fd, 'niceic_number') || null, status: 'approved',
+      ...(fd.get('vat_registered') === 'on' ? { vat_registered: true, vat_number: txt(fd, 'vat_number') || null } : {}) });
     if (e2) throw new Error(e2.message);
   } catch (e) { return fail(fd, e.message); }
   revalidatePath('/contractors');

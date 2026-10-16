@@ -132,3 +132,13 @@ input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);bo
 .proplink{text-decoration:none;color:inherit}
 .pager{display:flex;justify-content:space-between;align-items:center}
 .problem { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 10px; background: var(--soft, rgba(0,0,0,.04)); }
+/* two boxes side by side on wider screens, one under the other on phones; boxes line up even when labels differ */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0; flex: none; accent-color: var(--accent); }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font-weight: 500; font-size: 15px; cursor: pointer; background: var(--surface); }
+.check:has(input:checked) { border-color: var(--accent); }
+.formsection { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.formsection > h4 { margin: 0; font-size: 15px; }
+.hint { color: var(--muted); font-size: 13px; font-weight: 400; }
