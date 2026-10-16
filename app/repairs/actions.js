@@ -2,7 +2,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { currentMember, isStaff } from '@/lib/supabase/server';
-import { CATS, PRIORITY, SOURCES, TRADES, GO_AHEAD_REASONS, money } from '@/lib/rules';
+import { CATS, PRIORITY, SOURCES, TRADES, GO_AHEAD_REASONS, FIX_CHECKS, money } from '@/lib/rules';
 
 const txt = (fd, k) => String(fd.get(k) || '').trim();
 const pence = (fd, k) => { const v = txt(fd, k).replace(/[£,\s]/g, ''); if (v === '') return null; const n = Math.round(parseFloat(v) * 100); return Number.isFinite(n) && n >= 0 ? n : null; };
@@ -113,6 +113,8 @@ export async function approveInvoice(id) {
   const { sb, member, user } = await staffOnly();
   const { data: inv } = await sb.from('invoices').select('id, total_pence').eq('repair_id', id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!inv) redirect(`/repairs/${id}?error=${encodeURIComponent('No invoice waiting for approval')}`);
+  const { data: chk } = await sb.from('repairs').select('verified_at').eq('id', id).single();
+  if (!chk || !chk.verified_at) redirect(`/repairs/${id}?error=${encodeURIComponent('Confirm the repair is fixed before approving the invoice')}`);
   await sb.from('invoices').update({ status: 'approved', approved_by: user.id, approved_at: now() }).eq('id', inv.id);
   await sb.from('repairs').update({ status: 'approved' }).eq('id', id);
   await logEvent(sb, member.agency_id, id, 'status', { text: 'Invoice of ' + money(inv.total_pence) + ' approved by ' + user.email });
@@ -120,13 +122,13 @@ export async function approveInvoice(id) {
 }
 export async function queryInvoice(id, _prev, fd) {
   const { sb, member } = await staffOnly();
-  if (!txt(fd, 'reason')) return fail(fd, 'Write what needs checking');
+  if (!txt(fd, 'reason')) return fail(fd, 'Write what is wrong');
   const { data: inv } = await sb.from('invoices').select('id, total_pence').eq('repair_id', id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!inv) return fail(fd, 'No invoice waiting for approval');
   await sb.from('invoices').update({ status: 'queried' }).eq('id', inv.id);
-  await sb.from('repairs').update({ status: 'assigned', completed_at: null }).eq('id', id);
-  await logEvent(sb, member.agency_id, id, 'status', { text: 'Invoice of ' + money(inv.total_pence) + ' sent back: ' + txt(fd, 'reason') });
-  done(id, 'Invoice sent back to the contractor');
+  await sb.from('repairs').update({ status: 'assigned', completed_at: null, verified_at: null, verified_by: null }).eq('id', id);
+  await logEvent(sb, member.agency_id, id, 'status', { text: (fd.get('notfixed') ? 'Not fixed, sent back to the contractor (invoice of ' + money(inv.total_pence) + ' on hold): ' : 'Invoice of ' + money(inv.total_pence) + ' sent back: ') + txt(fd, 'reason') });
+  done(id, fd.get('notfixed') ? 'Sent back to the contractor to finish' : 'Invoice sent back to the contractor');
 }
 // Paying the contractor is client money: it goes in the ledger against the landlord
 export async function markPaid(id) {
@@ -143,10 +145,16 @@ export async function markPaid(id) {
   await logEvent(sb, member.agency_id, id, 'status', { text: 'Contractor paid ' + money(inv.total_pence) + ' from the client account, recorded by ' + user.email });
   done(id, 'Contractor paid and recorded in the ledger');
 }
-export async function verifyFixed(id) {
+// Confirm the problem is really fixed. This comes BEFORE the invoice can be approved and paid.
+export async function verifyFixed(id, _prev, fd) {
   const { sb, member, user } = await staffOnly();
-  await sb.from('repairs').update({ verified_at: now(), verified_by: user.id }).eq('id', id);
-  await logEvent(sb, member.agency_id, id, 'status', { text: 'Checked and confirmed fixed by ' + user.email });
+  const how = txt(fd, 'how');
+  if (!FIX_CHECKS.includes(how)) return fail(fd, 'Choose how you know it is fixed');
+  try {
+    const { error } = await sb.from('repairs').update({ verified_at: now(), verified_by: user.id }).eq('id', id);
+    if (error) throw new Error(error.message);
+    await logEvent(sb, member.agency_id, id, 'status', { text: 'Confirmed fixed: ' + how.toLowerCase() + (txt(fd, 'note') ? ' (' + txt(fd, 'note') + ')' : '') + ', by ' + user.email });
+  } catch (e) { return fail(fd, e.message); }
   done(id, 'Confirmed fixed');
 }
 export async function addNote(id, _prev, fd) {

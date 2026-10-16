@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { currentMember } from '@/lib/supabase/server';
 import TopBar from '../topbar';
-import { PRIORITY, REPAIR_FILTERS, STATUS_LABEL, daysOpen, pastTarget, repairNext, money } from '@/lib/rules';
+import { PRIORITY, REPAIR_FILTERS, statusLabel, daysOpen, pastTarget, repairNext, money } from '@/lib/rules';
 
 const addr = (p) => p ? p.address_line1 + (p.postcode ? ', ' + p.postcode : '') : '';
 
@@ -26,7 +26,7 @@ export default async function Repairs({ searchParams }) {
         {REPAIR_FILTERS.map(([id, label, st]) => <Link key={id} href={'/repairs?f=' + id} className={'btn small ' + (f[0] === id ? '' : 'ghost')}>{label} {R.filter((r) => st.includes(r.status)).length}</Link>)}
       </nav>
       {!list.length && <div className="card"><h3>{f[0] === 'mine' ? 'Nothing for you to do' : 'Nothing here'}</h3><p className="muted">{R.length ? 'No repairs in this group.' : 'Repairs you log appear here.'}</p></div>}
-      {list.map((r) => { const st = STATUS_LABEL[r.status] || STATUS_LABEL.reported, pr = PRIORITY[r.priority], late = pastTarget(r), d = daysOpen(r.reported_at), next = repairNext(r);
+      {list.map((r) => { const st = statusLabel(r), pr = PRIORITY[r.priority], late = pastTarget(r), d = daysOpen(r.reported_at), next = repairNext(r);
         return (
           <Link key={r.id} href={'/repairs/' + r.id} className="card proplink">
             <div className="row"><h3>{r.category}</h3><span className={'pill ' + st[0]}>{st[1]}</span></div>

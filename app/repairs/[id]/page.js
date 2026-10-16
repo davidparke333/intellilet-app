@@ -4,7 +4,7 @@ import { currentMember, isStaff } from '@/lib/supabase/server';
 import ActionForm from '@/components/ActionForm';
 import FileField from '@/components/FileField';
 import CostFields from '@/components/CostFields';
-import { PRIORITY, STATUS_LABEL, TRADE_FOR, GO_AHEAD_REASONS, daysOpen, pastTarget, repairNext, money, fmt, daysUntil } from '@/lib/rules';
+import { PRIORITY, statusLabel, FIX_CHECKS, TRADE_FOR, GO_AHEAD_REASONS, daysOpen, pastTarget, repairNext, money, fmt, daysUntil } from '@/lib/rules';
 import { callContractor, quoteDecision, workDone, approveInvoice, queryInvoice, markPaid, verifyFixed, addNote } from '../actions';
 
 const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
@@ -31,7 +31,7 @@ export default async function Repair({ params, searchParams }) {
   const quotes = ev.filter((e) => e.kind === 'quote_sent'), decisions = ev.filter((e) => e.kind === 'quote_decision');
   const cleared = Math.max(0, ...decisions.filter((e) => ['approved', 'proceeded'].includes(e.detail.status)).map((e) => Number(e.detail.amount) || 0));
   const waitingQuote = quotes.length > decisions.length ? quotes[quotes.length - 1] : null;
-  const st = STATUS_LABEL[r.status] || STATUS_LABEL.reported, pr = PRIORITY[r.priority];
+  const st = statusLabel(r), pr = PRIORITY[r.priority];
   const lead = r.tenancies && (r.tenancies.tenancy_people || []).find((x) => x.is_lead);
   const inv = (invoices || [])[0];
   const next = repairNext(r);
@@ -96,7 +96,7 @@ export default async function Repair({ params, searchParams }) {
 
       {staff && r.status === 'assigned' && (
         <ActionForm className="card" action={workDone.bind(null, id)}>
-          <Next text={next} sub="Use this when the contractor tells you it's finished, or you did it yourself." />
+          <Next text={next} sub="Use this when the contractor says it's finished. Next you'll check it's really fixed, before anything is paid." />
           <div className="field"><label htmlFor="wd">What was done</label><input id="wd" name="work_done" placeholder="e.g. Replaced diverter valve, hot water working" /></div>
           <CostFields vatRegistered={!!(r.contractors && r.contractors.vat_registered)} />
           <div className="field"><label htmlFor="rf">Their invoice number</label><input id="rf" name="reference" /></div>
@@ -106,9 +106,27 @@ export default async function Repair({ params, searchParams }) {
         </ActionForm>
       )}
 
-      {staff && r.status === 'invoiced' && inv && (
+      {staff && r.status === 'invoiced' && inv && !r.verified_at && (
         <div className="card">
-          <Next text={next} />
+          <Next text={next} sub={'The contractor says: ' + inv.work_done + '. Invoice ' + money(inv.total_pence) + ' is on hold until you confirm.'} />
+          <ActionForm className="stack" action={verifyFixed.bind(null, id)}>
+            <div className="field"><label htmlFor="how">How do you know it's fixed?</label>
+              <select id="how" name="how" defaultValue=""><option value="" disabled>Choose one</option>{FIX_CHECKS.map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div className="field"><label htmlFor="fn">Note (optional)</label><input id="fn" name="note" placeholder="e.g. Spoke to Jane, hot water fine" /></div>
+            <button className="btn">Yes, it's fixed</button>
+          </ActionForm>
+          <details className="more"><summary>Not fixed?</summary>
+            <ActionForm className="stack" action={queryInvoice.bind(null, id)}>
+              <input type="hidden" name="notfixed" value="1" />
+              <div className="field"><label htmlFor="nf">What's still wrong</label><input id="nf" name="reason" placeholder="e.g. Radiator in bedroom still cold" /></div>
+              <button className="btn ghost small">Send back to the contractor</button>
+            </ActionForm></details>
+        </div>
+      )}
+
+      {staff && r.status === 'invoiced' && inv && r.verified_at && (
+        <div className="card">
+          <Next text={next} sub={'Fix confirmed ' + when(r.verified_at) + '.'} />
           <span className="small"><b>Work done:</b> {inv.work_done}</span>
           <div className="row small"><span>Labour</span><span>{money(inv.labour_pence)}</span></div>
           <div className="row small"><span>Parts</span><span>{money(inv.parts_pence)}</span></div>
@@ -131,10 +149,13 @@ export default async function Repair({ params, searchParams }) {
       )}
 
       {staff && r.status === 'paid' && !r.verified_at && r.tenant_confirmed !== 'fixed' && (
-        <div className="card"><Next text={next} sub="Check with the tenant, or check it yourself, so the record shows the problem was really fixed." />
-          <form action={verifyFixed.bind(null, id)}><button className="btn ghost" style={{ width: '100%' }}>Confirm it is fixed (checked)</button></form></div>
+        <ActionForm className="card" action={verifyFixed.bind(null, id)}><Next text={next} sub="No charge for this job. Check it so the record shows the problem was really fixed." />
+          <div className="field"><label htmlFor="how2">How do you know it's fixed?</label>
+            <select id="how2" name="how" defaultValue=""><option value="" disabled>Choose one</option>{FIX_CHECKS.map((x) => <option key={x}>{x}</option>)}</select></div>
+          <div className="field"><label htmlFor="fn2">Note (optional)</label><input id="fn2" name="note" /></div>
+          <button className="btn">Yes, it's fixed</button></ActionForm>
       )}
-      {r.verified_at && <div className="note">Fix confirmed {when(r.verified_at)}</div>}
+      {r.verified_at && r.status === 'paid' && <div className="note">Fix confirmed {when(r.verified_at)}</div>}
 
       <div className="card"><h3>History</h3>
         {ev.map((e) => <div key={e.id} className="stack" style={{ gap: 0 }}><span className="muted small">{when(e.at)}</span><span className="small">{e.detail.text || e.kind}</span></div>)}
