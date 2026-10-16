@@ -1,42 +1,89 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { currentMember } from '@/lib/supabase/server';
+import { currentMember, isStaff } from '@/lib/supabase/server';
+import { loadProperty, docLink } from '@/lib/property';
+import { CERTS, certStatus, depositStatus, prescribedInfo, onboardingChecklist, fmt, money } from '@/lib/rules';
+import { markLive } from './actions';
 
-const CERTS = [['gas', 'Gas safety (CP12)'], ['eicr', 'EICR'], ['epc', 'EPC'], ['alarms', 'Smoke, heat & CO alarms'], ['legionella', 'Legionella risk assessment']];
-const fmt = (d) => d ? new Date(d + (String(d).length === 10 ? 'T00:00:00Z' : '')).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
-const daysUntil = (d) => Math.round((new Date(d + 'T00:00:00Z') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z')) / 86400000);
+const SAVED = { details: 'Property and landlord saved', tenancy: 'Tenancy saved', deposit: 'Deposit saved', certificate: 'Certificate recorded', live: 'Onboarding finished. This property is now live' };
 
-export default async function Property({ params }) {
-  const { id } = await params;
-  const { sb } = await currentMember();
-  const { data: p } = await sb.from('properties')
-    .select('*, property_owners(landlords(registration_number, registration_expires, contacts(full_name, email, phone))), tenancies(*, tenancy_people(is_lead, contacts(full_name, email, phone)))')
-    .eq('id', id).maybeSingle();
-  if (!p) notFound();
-  const { data: certs } = await sb.from('current_certificates').select('kind, expires_on, passed, result, basis').eq('property_id', id);
+export default async function Property({ params, searchParams }) {
+  const { id } = await params; const sp = await searchParams;
+  const { sb, member } = await currentMember();
+  const data = await loadProperty(sb, id);
+  if (!data) notFound();
+  const { p, owners, tenancy, tenants, certs } = data;
+  const staff = isStaff(member);
+  const L = owners[0] && owners[0].landlords, lc = (L && L.contacts) || {};
+  const list = onboardingChecklist(data);
+  const ds = depositStatus(tenancy), pi = prescribedInfo(tenancy);
+  const certDocs = Object.fromEntries(await Promise.all(certs.map(async (c) => [c.kind, await docLink(sb, c.document_id)])));
+  const piDoc = tenancy ? await docLink(sb, tenancy.pi_document_id) : null;
   const { count: openRepairs } = await sb.from('repairs').select('id', { count: 'exact', head: true }).eq('property_id', id).in('status', ['reported', 'assigned', 'invoiced']);
-  const t = (p.tenancies || []).find((x) => x.status === 'active');
+  const live = p.onboarding_status === 'live';
+
   return (
     <>
       <Link href="/" className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ Homes</Link>
-      <div className="pagehead"><h1>{p.address_line1}</h1><span className="sub">{[p.address_line2, p.town, p.postcode].filter(Boolean).join(', ')}</span></div>
-      <div className="card"><h3>Landlord</h3>
-        {(p.property_owners || []).length ? p.property_owners.map((o, i) => { const c = (o.landlords && o.landlords.contacts) || {}; return (
-          <div key={i} className="stack" style={{ gap: 2 }}><b>{c.full_name}</b><span className="muted small">{[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}{o.landlords.registration_number ? ' · reg ' + o.landlords.registration_number : ''}</span></div>); })
+      <div className="pagehead"><h1>{p.address_line1}</h1><span className="sub">{[p.address_line2, p.town, p.postcode].filter(Boolean).join(', ')}{p.bedrooms != null ? ` · ${p.bedrooms} bed ${String(p.property_type).toLowerCase()}` : ''}</span></div>
+      {sp.saved && <div className="note" role="status">{SAVED[sp.saved] || 'Saved'}</div>}
+      {sp.error && <div className="error" role="alert">{sp.error}</div>}
+
+      {!live && (
+        <div className="card">
+          <div className="row"><div className="stack" style={{ gap: 2 }}><h3>Onboarding</h3><span className="muted small">{list.done} of {list.total} done. Finish these before the property goes live.</span></div>
+            <span className={'pill ' + (list.complete ? 'ok' : 'due')}>{Math.round(100 * list.done / list.total)}%</span></div>
+          {['Property', 'Landlord', 'Safety', 'Tenancy'].map((g) => {
+            const rows = list.items.filter((i) => i.group === g); if (!rows.length) return null;
+            return (<div key={g} className="stack" style={{ gap: 4 }}><b className="small">{g}</b>
+              {rows.map((i) => <span key={i.label} className="small" style={{ color: i.done ? 'var(--muted)' : 'var(--ink)' }}><span aria-hidden="true" style={{ display: 'inline-block', width: 20, fontWeight: 700, color: i.done ? 'var(--accent)' : 'var(--bad-ink)' }}>{i.done ? '✓' : '○'}</span>{i.label}</span>)}</div>);
+          })}
+          {staff && (list.complete
+            ? <form action={markLive.bind(null, id)}><button className="btn">Finish onboarding · mark live</button></form>
+            : <span className="muted small">Tap Edit on each section below to fill in what's missing.</span>)}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="row"><h3>Property and landlord</h3>{staff && <Link className="btn ghost small" href={`/properties/${id}/details`}>Edit</Link>}</div>
+        <span className="small">Keys: {p.keys_location || <span className="muted">not recorded</span>}</span>
+        {p.property_type === 'HMO' && <span className="small">HMO licence: {p.hmo_licence_number || 'not recorded'}{p.hmo_licence_expires ? ' · expires ' + fmt(p.hmo_licence_expires) : ''}</span>}
+        {L ? (<div className="stack" style={{ gap: 2 }}><b>{lc.full_name}</b>
+          <span className="muted small">{[lc.email, lc.phone].filter(Boolean).join(' · ') || 'No contact details'}</span>
+          <span className="muted small">Registration {L.registration_number || 'not recorded'}{L.registration_expires ? ' · expires ' + fmt(L.registration_expires) : ''} · {L.package} package · spend limit {money(L.approval_limit_pence)}</span></div>)
           : <span className="muted">No landlord recorded yet.</span>}
       </div>
-      <div className="card"><h3>Tenancy</h3>
-        {t ? (<><span>{(t.tenancy_people || []).map((x) => x.contacts && x.contacts.full_name).filter(Boolean).join(', ') || 'Tenant not recorded'}</span>
-          <span className="muted small">Started {fmt(t.start_date)} · £{(t.rent_pence / 100).toFixed(2)} a month · deposit £{(t.deposit_pence / 100).toFixed(2)}</span></>)
-          : <span className="muted">Vacant.</span>}
+
+      <div className="card">
+        <div className="row"><h3>Tenancy</h3>{staff && <Link className="btn ghost small" href={`/properties/${id}/tenancy`}>{tenancy ? 'Edit' : 'Add tenancy'}</Link>}</div>
+        {tenancy ? (<>
+          <span>{tenants.map((t) => t.contacts && t.contacts.full_name).filter(Boolean).join(' & ') || 'Tenant not recorded'}</span>
+          <span className="muted small">{tenancy.status === 'pending' ? 'Starts' : 'Started'} {fmt(tenancy.start_date)} · {money(tenancy.rent_pence)} a month, due on day {tenancy.rent_due_day}{tenancy.taken_over ? ' · taken over from a previous agent' : ''}</span>
+        </>) : <span className="muted">Vacant. Add a tenancy when a tenant moves in.</span>}
       </div>
+
+      {tenancy && Number(tenancy.deposit_pence) > 0 && (
+        <div className="card">
+          <div className="row"><h3>Deposit {money(tenancy.deposit_pence)}</h3>{staff && <Link className="btn ghost small" href={`/properties/${id}/deposit`}>Edit</Link>}</div>
+          <div className="row"><span className="small">Protection</span><span className={'pill ' + ds.cls}>{ds.text}</span></div>
+          {tenancy.deposit_lodged_on && <span className="muted small">{tenancy.deposit_scheme}{tenancy.deposit_reference ? ' · ref ' + tenancy.deposit_reference : ' · reference not recorded'}</span>}
+          {pi && <div className="row"><span className="small">Prescribed information</span><span className={'pill ' + pi.cls}>{pi.text}</span></div>}
+          {piDoc && <a className="small" href={piDoc.url} target="_blank" rel="noopener">View copy: {piDoc.name}</a>}
+        </div>
+      )}
+
       <div className="card"><h3>Certificates</h3>
-        {CERTS.map(([k, label]) => { const c = (certs || []).find((x) => x.kind === k); const d = c ? daysUntil(c.expires_on) : null;
-          const st = !c ? ['bad', 'Missing'] : !c.passed ? ['bad', 'Failed · remedial work needed'] : d < 0 ? (c.basis === 'policy' ? ['due', 'Review overdue'] : ['bad', 'Expired']) : d <= 60 ? ['due', 'Due in ' + d + ' days'] : ['ok', 'Valid to ' + fmt(c.expires_on)];
-          return <div key={k} className="row"><span>{label}</span><span className={'pill ' + st[0]}>{st[1]}</span></div>; })}
+        {CERTS.map((c) => { const cert = certs.find((x) => x.kind === c.key), st = certStatus(c, cert), doc = certDocs[c.key];
+          return (<div key={c.key} className="stack" style={{ gap: 4 }}>
+            <div className="row"><span>{c.label}</span><span className={'pill ' + st.cls}>{st.text}</span></div>
+            <span className="muted small">{cert ? `Checked ${fmt(cert.checked_on)} · ${cert.result}${cert.carried_out_by ? ' · ' + cert.carried_out_by : ''}` : c.rule}
+              {doc ? <> · <a href={doc.url} target="_blank" rel="noopener">View certificate</a></> : cert ? ' · no copy uploaded' : ''}
+              {staff && <> · <Link href={`/properties/${id}/certificate/${c.key}`}>{cert ? 'Record new' : 'Record'}</Link></>}</span>
+          </div>); })}
       </div>
-      <div className="card"><div className="row"><h3>Repairs</h3><span className={'pill ' + (openRepairs ? 'due' : 'ok')}>{openRepairs || 0} open</span></div></div>
-      <p className="muted small">This is the first version of the real app. Tenancies, certificates, repairs and the rest of the prototype's screens are added next, one at a time.</p>
+
+      <div className="card"><div className="row"><h3>Repairs</h3><span className={'pill ' + (openRepairs ? 'due' : 'ok')}>{openRepairs || 0} open</span></div>
+        <span className="muted small">The repairs screens come next in the build.</span></div>
     </>
   );
 }
