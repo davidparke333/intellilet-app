@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { loadProperty } from '@/lib/property';
 import FileField from '@/components/FileField';
+import ActionForm from '@/components/ActionForm';
 import { saveDetails } from '../actions';
 
 const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
@@ -18,8 +19,7 @@ export default async function Details({ params, searchParams }) {
     <>
       <Link href={`/properties/${id}`} className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ {p.address_line1}</Link>
       <div className="pagehead"><h1>Property and landlord</h1></div>
-      {sp.error && <div className="error" role="alert">{sp.error}</div>}
-      <form className="stack" action={saveDetails.bind(null, id)}>
+            <ActionForm className="stack" action={saveDetails.bind(null, id)}>
         <div className="card"><h3>The property</h3>
           <div className="field"><label htmlFor="a1">Address line 1</label><input id="a1" name="address_line1" required defaultValue={p.address_line1} /></div>
           <div className="field"><label htmlFor="a2">Address line 2</label><input id="a2" name="address_line2" defaultValue={p.address_line2 || ''} /></div>
@@ -50,7 +50,7 @@ export default async function Details({ params, searchParams }) {
           <label style={tick}><span>Landlord identity and ownership checked</span><input type="checkbox" name="identity_checked" defaultChecked={!!L.identity_checked} style={{ width: 24, height: 24 }} /></label>
         </div>
         <button className="btn">Save</button>
-      </form>
+      </ActionForm>
     </>
   );
 }

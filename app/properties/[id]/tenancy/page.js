@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { loadProperty } from '@/lib/property';
 import FileField from '@/components/FileField';
+import ActionForm from '@/components/ActionForm';
 import { saveTenancy } from '../actions';
 
 const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
@@ -25,8 +26,7 @@ export default async function Tenancy({ params, searchParams }) {
     <>
       <Link href={`/properties/${id}`} className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ {p.address_line1}</Link>
       <div className="pagehead"><h1>{t ? 'Tenancy' : 'Add a tenancy'}</h1><span className="sub">{p.address_line1}, {p.postcode}</span></div>
-      {sp.error && <div className="error" role="alert">{sp.error}</div>}
-      <form className="stack" action={saveTenancy.bind(null, id)}>
+            <ActionForm className="stack" action={saveTenancy.bind(null, id)}>
         <input type="hidden" name="tenancy_id" value={t ? t.id : ''} />
         <div className="card"><h3>Tenants</h3>{person(1)}{person(2)}</div>
         <div className="card"><h3>Terms</h3>
@@ -40,7 +40,7 @@ export default async function Tenancy({ params, searchParams }) {
         </div>
         <button className="btn">Save tenancy</button>
         <span className="muted small">You can record the deposit and prescribed information after saving.</span>
-      </form>
+      </ActionForm>
     </>
   );
 }

@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { loadProperty } from '@/lib/property';
 import FileField from '@/components/FileField';
+import ActionForm from '@/components/ActionForm';
 import { DEPOSIT_SCHEMES, PI_ITEMS, PI_METHODS, depositStatus, prescribedInfo, money } from '@/lib/rules';
 import { saveDeposit } from '../actions';
 
@@ -21,9 +22,8 @@ export default async function Deposit({ params, searchParams }) {
     <>
       <Link href={`/properties/${id}`} className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ {p.address_line1}</Link>
       <div className="pagehead"><h1>Deposit {money(t.deposit_pence)}</h1><span className="sub">Must be protected within 30 working days of the tenancy starting, and the prescribed information given within 30 working days of lodging.</span></div>
-      {sp.error && <div className="error" role="alert">{sp.error}</div>}
-      {ds && <div className="row card"><span className="small">Protection</span><span className={'pill ' + ds.cls}>{ds.text}</span></div>}
-      <form className="stack" action={saveDeposit.bind(null, id)}>
+            {ds && <div className="row card"><span className="small">Protection</span><span className={'pill ' + ds.cls}>{ds.text}</span></div>}
+      <ActionForm className="stack" action={saveDeposit.bind(null, id)}>
         <input type="hidden" name="tenancy_id" value={t.id} />
         <div className="card"><h3>Protection</h3>
           <div style={two}><div className="field"><label htmlFor="rc">Received on</label><input id="rc" name="deposit_received_on" type="date" defaultValue={t.deposit_received_on || t.start_date} /></div>
@@ -41,7 +41,7 @@ export default async function Deposit({ params, searchParams }) {
         </div>
         <button className="btn">Save deposit</button>
         <span className="muted small">Working days skip weekends and bank holidays in every part of the UK. Check deadlines yourself before relying on them.</span>
-      </form>
+      </ActionForm>
     </>
   );
 }

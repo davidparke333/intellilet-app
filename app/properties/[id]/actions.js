@@ -9,6 +9,9 @@ const txt = (fd, k) => String(fd.get(k) || '').trim();
 const dateOrNull = (fd, k) => { const v = txt(fd, k); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
 const pence = (fd, k) => { const v = txt(fd, k).replace(/[£,\s]/g, ''); if (v === '') return null; const n = Math.round(parseFloat(v) * 100); return Number.isFinite(n) && n >= 0 ? n : null; };
 const back = (id, page, msg) => redirect(`/properties/${id}${page ? '/' + page : ''}?error=${encodeURIComponent(msg)}`);
+// what the person typed, so the form can put it all back after a refused save
+const friendly = (m) => /check constraint/.test(m) ? 'Some dates do not fit together, for example information given before the deposit was lodged, or an end date before the start' : /duplicate key/.test(m) ? 'This has already been recorded' : m;
+const fail = (fd, msg) => ({ error: friendly(String(msg)).replace(/\.$/, ''), values: Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string')) });
 
 async function staffOnly() {
   const ctx = await currentMember();
@@ -29,7 +32,7 @@ async function addDocument(sb, agency_id, fd, prefix, about_table, about_id, lab
 }
 
 // ---- property details + landlord ----
-export async function saveDetails(id, fd) {
+export async function saveDetails(id, _prev, fd) {
   const { sb, member } = await staffOnly();
   const agency_id = member.agency_id;
   const beds = txt(fd, 'bedrooms') === '' ? null : Math.max(0, Math.min(30, parseInt(txt(fd, 'bedrooms'), 10) || 0));
@@ -39,7 +42,7 @@ export async function saveDetails(id, fd) {
     keys_location: txt(fd, 'keys_location') || null, hmo_licence_number: txt(fd, 'hmo_licence_number') || null,
     hmo_licence_expires: dateOrNull(fd, 'hmo_licence_expires'), insurer: txt(fd, 'insurer') || null, insurance_expires: dateOrNull(fd, 'insurance_expires')
   }).eq('id', id);
-  if (error) back(id, 'details', error.message);
+  if (error) return fail(fd, error.message);
 
   const name = txt(fd, 'landlord_name');
   if (name) {
@@ -67,18 +70,18 @@ export async function saveDetails(id, fd) {
         if (agr) await sb.from('landlords').update({ agreement_document_id: agr }).eq('id', l.id);
         await sb.from('property_owners').insert({ agency_id, property_id: id, landlord_id: l.id });
       }
-    } catch (e) { back(id, 'details', e.message); }
+    } catch (e) { return fail(fd, e.message); }
   }
   revalidatePath(`/properties/${id}`);
   redirect(`/properties/${id}?saved=details`);
 }
 
 // ---- tenancy + tenants ----
-export async function saveTenancy(id, fd) {
+export async function saveTenancy(id, _prev, fd) {
   const { sb, member } = await staffOnly();
   const agency_id = member.agency_id;
   const start = dateOrNull(fd, 'start_date'), rent = pence(fd, 'rent');
-  if (!start || rent === null) back(id, 'tenancy', 'Enter the tenancy start date and the monthly rent');
+  if (!start || rent === null) return fail(fd, 'Enter the tenancy start date and the monthly rent');
   const due = Math.max(1, Math.min(28, parseInt(txt(fd, 'rent_due_day'), 10) || 1));
   const rec = { start_date: start, rent_pence: rent, rent_due_day: due, taken_over: fd.get('taken_over') === 'on',
     arrears_at_handover_pence: pence(fd, 'arrears_at_handover') ?? 0, deposit_pence: pence(fd, 'deposit') ?? 0, status: start > todayISO() ? 'pending' : 'active' };
@@ -106,42 +109,42 @@ export async function saveTenancy(id, fd) {
         await sb.from('tenancy_people').insert({ agency_id, tenancy_id: tenancyId, contact_id: c.id, is_lead: n === 1 });
       }
     }
-  } catch (e) { back(id, 'tenancy', e.message); }
+  } catch (e) { return fail(fd, e.message); }
   revalidatePath(`/properties/${id}`);
   redirect(`/properties/${id}?saved=tenancy`);
 }
 
 // ---- deposit + prescribed information ----
-export async function saveDeposit(id, fd) {
+export async function saveDeposit(id, _prev, fd) {
   const { sb, member } = await staffOnly();
-  const tenancyId = txt(fd, 'tenancy_id'); if (!tenancyId) back(id, '', 'Add the tenancy first');
+  const tenancyId = txt(fd, 'tenancy_id'); if (!tenancyId) return fail(fd, 'Add the tenancy first');
   const T = todayISO();
   const rec = { deposit_received_on: dateOrNull(fd, 'deposit_received_on'), deposit_scheme: DEPOSIT_SCHEMES.includes(txt(fd, 'deposit_scheme')) ? txt(fd, 'deposit_scheme') : null,
     deposit_lodged_on: dateOrNull(fd, 'deposit_lodged_on'), deposit_reference: txt(fd, 'deposit_reference') || null,
     pi_given_on: dateOrNull(fd, 'pi_given_on'), pi_method: txt(fd, 'pi_method') || null,
     pi_items: Object.fromEntries(PI_ITEMS.map(([k]) => [k, fd.get('pi_' + k) === 'on'])) };
-  if (rec.deposit_lodged_on && !rec.deposit_scheme) back(id, 'deposit', 'Choose which scheme the deposit was lodged with');
-  if ((rec.deposit_lodged_on && rec.deposit_lodged_on > T) || (rec.pi_given_on && rec.pi_given_on > T)) back(id, 'deposit', 'Dates cannot be in the future');
-  if (rec.pi_given_on && !rec.deposit_lodged_on) back(id, 'deposit', 'Record when the deposit was lodged first');
-  if (rec.pi_given_on && rec.pi_given_on < rec.deposit_lodged_on) back(id, 'deposit', 'The information date is before the deposit was lodged. Check the dates');
+  if (rec.deposit_lodged_on && !rec.deposit_scheme) return fail(fd, 'Choose which scheme the deposit was lodged with');
+  if ((rec.deposit_lodged_on && rec.deposit_lodged_on > T) || (rec.pi_given_on && rec.pi_given_on > T)) return fail(fd, 'Dates cannot be in the future');
+  if (rec.pi_given_on && !rec.deposit_lodged_on) return fail(fd, 'Record when the deposit was lodged first');
+  if (rec.pi_given_on && rec.pi_given_on < rec.deposit_lodged_on) return fail(fd, 'The information date is before the deposit was lodged. Check the dates');
   try {
     const doc = await addDocument(sb, member.agency_id, fd, 'pi', 'tenancies', tenancyId, 'prescribed information');
     const { error } = await sb.from('tenancies').update({ ...rec, ...(doc ? { pi_document_id: doc } : {}) }).eq('id', tenancyId);
     if (error) throw new Error(error.message);
-  } catch (e) { back(id, 'deposit', e.message); }
+  } catch (e) { return fail(fd, e.message); }
   revalidatePath(`/properties/${id}`);
   redirect(`/properties/${id}?saved=deposit`);
 }
 
 // ---- record a certificate (the previous one of that kind is kept as history) ----
-export async function recordCertificate(id, kind, fd) {
+export async function recordCertificate(id, kind, _prev, fd) {
   const { sb, member } = await staffOnly();
   const c = CERTS.find((x) => x.key === kind); if (!c) redirect(`/properties/${id}`);
   const checked = dateOrNull(fd, 'checked_on');
-  if (!checked) back(id, 'certificate/' + kind, 'Enter the date of the check');
-  if (checked > todayISO()) back(id, 'certificate/' + kind, 'The date of the check cannot be in the future');
+  if (!checked) return fail(fd, 'Enter the date of the check');
+  if (checked > todayISO()) return fail(fd, 'The date of the check cannot be in the future');
   const expires = dateOrNull(fd, 'expires_on') || addYears(checked, c.years);
-  if (expires < checked) back(id, 'certificate/' + kind, 'The expiry date is before the date of the check');
+  if (expires < checked) return fail(fd, 'The expiry date is before the date of the check');
   const result = txt(fd, 'result') || c.results[0];
   try {
     const { data: prev } = await sb.from('current_certificates').select('id').eq('property_id', id).eq('kind', kind);
@@ -158,7 +161,7 @@ export async function recordCertificate(id, kind, fd) {
       await sb.from('repairs').insert({ agency_id: member.agency_id, property_id: id, category: kind === 'gas' ? 'Heating' : kind === 'legionella' ? 'Plumbing' : 'Electrics',
         description: c.label + ' result: ' + result + (txt(fd, 'certificate_no') ? ' (certificate ' + txt(fd, 'certificate_no') + ')' : ''), priority: 'urgent', source: 'Staff' });
     }
-  } catch (e) { back(id, 'certificate/' + kind, e.message); }
+  } catch (e) { return fail(fd, e.message); }
   revalidatePath(`/properties/${id}`);
   redirect(`/properties/${id}?saved=certificate`);
 }
