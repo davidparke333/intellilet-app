@@ -27,7 +27,7 @@ export default async function Homes({ searchParams }) {
 
   return (
     <>
-      <TopBar sub={`${agencyName} · ${member.role}`} />
+      <TopBar sub={`${agencyName} · ${member.role}`} here="/" />
       <div className="row"><div className="pagehead"><h1>Homes</h1><span className="sub">{count || 0} propert{count === 1 ? 'y' : 'ies'}</span></div>
         {isStaff(member) && <Link className="btn small" href="/properties/new">Add</Link>}</div>
       <form className="row" action="/" method="get">

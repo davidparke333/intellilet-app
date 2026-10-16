@@ -1,0 +1,170 @@
+'use server';
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+import { currentMember, isStaff } from '@/lib/supabase/server';
+import { CATS, PRIORITY, SOURCES, TRADES, GO_AHEAD_REASONS, money } from '@/lib/rules';
+
+const txt = (fd, k) => String(fd.get(k) || '').trim();
+const pence = (fd, k) => { const v = txt(fd, k).replace(/[£,\s]/g, ''); if (v === '') return null; const n = Math.round(parseFloat(v) * 100); return Number.isFinite(n) && n >= 0 ? n : null; };
+const fail = (fd, msg) => ({ error: String(msg).replace(/\.$/, ''), values: Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string')) });
+const now = () => new Date().toISOString();
+
+async function staffOnly() { const ctx = await currentMember(); if (!isStaff(ctx.member)) redirect('/'); return ctx; }
+async function logEvent(sb, agency_id, repair_id, kind, detail) {
+  const { error } = await sb.from('repair_events').insert({ agency_id, repair_id, kind, detail });
+  if (error) throw new Error(error.message);
+}
+async function addPhoto(sb, agency_id, fd, prefix, repair_id, label) {
+  const path = txt(fd, prefix + '_path'); if (!path) return;
+  if (!path.startsWith(agency_id + '/')) throw new Error('File is not in this agency\'s folder');
+  const { error } = await sb.from('documents').insert({ agency_id, storage_path: path, file_name: txt(fd, prefix + '_name') || null, mime_type: txt(fd, prefix + '_mime') || null,
+    size_bytes: Number(txt(fd, prefix + '_size')) || null, about_table: 'repairs', about_id: repair_id, label });
+  if (error) throw new Error(error.message);
+}
+const done = (id, msg) => { revalidatePath('/repairs'); revalidatePath(`/repairs/${id}`); redirect(`/repairs/${id}?saved=${encodeURIComponent(msg)}`); };
+
+// ---- log a new repair ----
+export async function logRepair(_prev, fd) {
+  const { sb, member } = await staffOnly();
+  const agency_id = member.agency_id, property_id = txt(fd, 'property_id');
+  const category = CATS.includes(txt(fd, 'category')) ? txt(fd, 'category') : 'Something else';
+  let priority = PRIORITY[txt(fd, 'priority')] ? txt(fd, 'priority') : 'routine';
+  const is_damp = category === 'Damp & mould' || fd.get('is_damp') === 'on';
+  if (is_damp && priority === 'routine') priority = 'urgent';
+  if (!property_id) return fail(fd, 'Choose the property');
+  if (!txt(fd, 'description')) return fail(fd, 'Describe the problem');
+  const { data: t } = await sb.from('tenancies').select('id').eq('property_id', property_id).in('status', ['active', 'pending']).maybeSingle();
+  let id;
+  try {
+    const { data, error } = await sb.from('repairs').insert({ agency_id, property_id, tenancy_id: t ? t.id : null, category, description: txt(fd, 'description'), priority, is_damp,
+      source: SOURCES.includes(txt(fd, 'source')) ? txt(fd, 'source') : 'Staff', access_with_key: fd.get('access_with_key') === 'on', best_times: txt(fd, 'best_times') || null }).select('id').single();
+    if (error) throw new Error(error.message);
+    id = data.id;
+    for (const n of [1, 2, 3]) await addPhoto(sb, agency_id, fd, 'photo' + n, id, 'photo of fault');
+    await logEvent(sb, agency_id, id, 'status', { text: 'Reported: ' + txt(fd, 'description') });
+  } catch (e) { return fail(fd, e.message); }
+  done(id, 'Repair logged');
+}
+
+// ---- phone a contractor: record the call, and book only once they agree ----
+export async function callContractor(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  const { data: r } = await sb.from('repairs').select('*, properties(id, property_owners(landlords(approval_limit_pence)))').eq('id', id).single();
+  const cid = txt(fd, 'contractor_id'), outcome = txt(fd, 'outcome');
+  const { data: c } = await sb.from('contractors').select('id, contacts(full_name)').eq('id', cid).single();
+  const name = (c && c.contacts && c.contacts.full_name) || 'Contractor';
+  try {
+    if (outcome !== 'agreed') {
+      await logEvent(sb, member.agency_id, id, 'call', { contractor_id: cid, outcome, text: 'Phoned ' + name + ': ' + (outcome === 'noanswer' ? 'no answer' : outcome === 'voicemail' ? 'left voicemail' : 'can\'t do it') });
+      done(id, 'Call logged');
+    }
+    const limit = pence(fd, 'spend_limit');
+    const owner = r.properties && r.properties.property_owners && r.properties.property_owners[0];
+    const cap = Math.max((owner && owner.landlords && owner.landlords.approval_limit_pence) || 25000, await quoteCleared(sb, id));
+    if (limit && limit > cap && r.priority !== 'emergency') {
+      await logEvent(sb, member.agency_id, id, 'quote_sent', { amount: limit, text: 'Spend of ' + money(limit) + ' is above the landlord limit of ' + money(cap) + '. Quote sent to the landlord for approval' });
+      done(id, 'Above the landlord limit: record the landlord\'s answer before booking');
+    }
+    const { error } = await sb.from('repairs').update({ status: 'assigned', contractor_id: cid, assigned_at: now(), spend_limit_pence: limit }).eq('id', id);
+    if (error) throw new Error(error.message);
+    await logEvent(sb, member.agency_id, id, 'booked', { contractor_id: cid, text: 'Phoned ' + name + ', they agreed. Booked' + (limit ? ', spend limit ' + money(limit) : '') + (limit && limit > cap ? '. Emergency above the landlord limit of ' + money(cap) + ': tell the landlord' : '') });
+  } catch (e) { if (e && e.digest && String(e.digest).startsWith('NEXT_REDIRECT')) throw e; return fail(fd, e.message); }
+  done(id, 'Booked ' + name);
+}
+// the largest amount the landlord has approved (or we went ahead with) for this repair
+async function quoteCleared(sb, id) {
+  const { data: ev } = await sb.from('repair_events').select('kind, detail').eq('repair_id', id).in('kind', ['quote_decision']);
+  return Math.max(0, ...(ev || []).filter((e) => ['approved', 'proceeded'].includes(e.detail.status)).map((e) => Number(e.detail.amount) || 0));
+}
+export async function quoteDecision(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  const status = txt(fd, 'status'), amount = pence(fd, 'amount') || 0, note = txt(fd, 'note');
+  if (status === 'proceeded' && !GO_AHEAD_REASONS.includes(note)) return fail(fd, 'Choose why you are going ahead without the landlord');
+  try {
+    await logEvent(sb, member.agency_id, id, 'quote_decision', { status, amount, note,
+      text: status === 'approved' ? 'Landlord approved ' + money(amount) + (note ? ': ' + note : '') : status === 'declined' ? 'Landlord declined the quote' + (note ? ': ' + note : '') : 'Went ahead up to ' + money(amount) + ' without a reply: ' + note });
+  } catch (e) { return fail(fd, e.message); }
+  done(id, status === 'declined' ? 'Landlord declined' : 'Cleared up to ' + money(amount) + '. You can book now');
+}
+
+// ---- work done, invoice, approve, pay ----
+export async function workDone(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  const { data: r } = await sb.from('repairs').select('contractor_id').eq('id', id).single();
+  const labour = pence(fd, 'labour') ?? 0, parts = pence(fd, 'parts') ?? 0, vat = pence(fd, 'vat') ?? 0;
+  if (!txt(fd, 'work_done')) return fail(fd, 'Say what was done');
+  try {
+    const { error } = await sb.from('invoices').insert({ agency_id: member.agency_id, repair_id: id, contractor_id: r.contractor_id, reference: txt(fd, 'reference') || null,
+      work_done: txt(fd, 'work_done'), labour_pence: labour, parts_pence: parts, vat_pence: vat, submitted_via: 'staff' });
+    if (error) throw new Error(error.message);
+    const free = labour + parts + vat === 0;
+    await sb.from('repairs').update({ status: free ? 'paid' : 'invoiced', completed_at: now() }).eq('id', id);
+    for (const n of [1, 2]) await addPhoto(sb, member.agency_id, fd, 'after' + n, id, 'after the work');
+    await logEvent(sb, member.agency_id, id, 'status', { text: 'Work done: ' + txt(fd, 'work_done') + (free ? ' · no charge' : ' · invoice ' + money(labour + parts + vat) + (txt(fd, 'reference') ? ' (' + txt(fd, 'reference') + ')' : '') + ' to approve') });
+  } catch (e) { return fail(fd, e.message); }
+  done(id, 'Work recorded as done');
+}
+export async function approveInvoice(id) {
+  const { sb, member, user } = await staffOnly();
+  const { data: inv } = await sb.from('invoices').select('id, total_pence').eq('repair_id', id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!inv) redirect(`/repairs/${id}?error=${encodeURIComponent('No invoice waiting for approval')}`);
+  await sb.from('invoices').update({ status: 'approved', approved_by: user.id, approved_at: now() }).eq('id', inv.id);
+  await sb.from('repairs').update({ status: 'approved' }).eq('id', id);
+  await logEvent(sb, member.agency_id, id, 'status', { text: 'Invoice of ' + money(inv.total_pence) + ' approved by ' + user.email });
+  done(id, 'Invoice approved');
+}
+export async function queryInvoice(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  if (!txt(fd, 'reason')) return fail(fd, 'Write what needs checking');
+  const { data: inv } = await sb.from('invoices').select('id, total_pence').eq('repair_id', id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!inv) return fail(fd, 'No invoice waiting for approval');
+  await sb.from('invoices').update({ status: 'queried' }).eq('id', inv.id);
+  await sb.from('repairs').update({ status: 'assigned', completed_at: null }).eq('id', id);
+  await logEvent(sb, member.agency_id, id, 'status', { text: 'Invoice of ' + money(inv.total_pence) + ' sent back: ' + txt(fd, 'reason') });
+  done(id, 'Invoice sent back to the contractor');
+}
+// Paying the contractor is client money: it goes in the ledger against the landlord
+export async function markPaid(id) {
+  const { sb, member, user } = await staffOnly();
+  const { data: r } = await sb.from('repairs').select('id, property_id, contractor_id, properties(property_owners(landlord_id))').eq('id', id).single();
+  const { data: inv } = await sb.from('invoices').select('id, total_pence, reference').eq('repair_id', id).eq('status', 'approved').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!inv) redirect(`/repairs/${id}?error=${encodeURIComponent('No approved invoice to pay')}`);
+  const landlord_id = r.properties && r.properties.property_owners && r.properties.property_owners[0] ? r.properties.property_owners[0].landlord_id : null;
+  const { error } = await sb.from('ledger_entries').insert({ agency_id: member.agency_id, entry_date: new Date().toISOString().slice(0, 10), account: 'client', amount_pence: -inv.total_pence,
+    category: 'contractor payment', reference: inv.reference || 'REPAIR-' + id.slice(0, 8).toUpperCase(), property_id: r.property_id, landlord_id, contractor_id: r.contractor_id, invoice_id: inv.id, memo: 'Repair invoice paid' });
+  if (error) redirect(`/repairs/${id}?error=${encodeURIComponent(error.message)}`);
+  await sb.from('invoices').update({ status: 'paid', paid_at: now() }).eq('id', inv.id);
+  await sb.from('repairs').update({ status: 'paid' }).eq('id', id);
+  await logEvent(sb, member.agency_id, id, 'status', { text: 'Contractor paid ' + money(inv.total_pence) + ' from the client account, recorded by ' + user.email });
+  done(id, 'Contractor paid and recorded in the ledger');
+}
+export async function verifyFixed(id) {
+  const { sb, member, user } = await staffOnly();
+  await sb.from('repairs').update({ verified_at: now(), verified_by: user.id }).eq('id', id);
+  await logEvent(sb, member.agency_id, id, 'status', { text: 'Checked and confirmed fixed by ' + user.email });
+  done(id, 'Confirmed fixed');
+}
+export async function addNote(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  if (!txt(fd, 'note')) return fail(fd, 'Write the note first');
+  try { await logEvent(sb, member.agency_id, id, 'note', { text: txt(fd, 'note') }); } catch (e) { return fail(fd, e.message); }
+  done(id, 'Note added');
+}
+
+// ---- contractors ----
+export async function addContractor(_prev, fd) {
+  const { sb, member } = await staffOnly();
+  if (!txt(fd, 'name')) return fail(fd, 'Enter the contractor\'s name');
+  const trades = TRADES.filter((t) => fd.get('trade_' + t) === 'on');
+  if (!trades.length) return fail(fd, 'Tick at least one trade');
+  try {
+    const { data: c, error } = await sb.from('contacts').insert({ agency_id: member.agency_id, kind: 'company', full_name: txt(fd, 'name'), email: txt(fd, 'email') || null, phone: txt(fd, 'phone') || null }).select('id').single();
+    if (error) throw new Error(error.message);
+    const { error: e2 } = await sb.from('contractors').insert({ agency_id: member.agency_id, contact_id: c.id, trades, hourly_rate_pence: pence(fd, 'rate'),
+      availability: txt(fd, 'availability') === '24h' ? '24h' : 'office', areas: txt(fd, 'areas') || null, insurance_expires: txt(fd, 'insurance_expires') || null,
+      gas_safe_number: txt(fd, 'gas_safe_number') || null, niceic_number: txt(fd, 'niceic_number') || null, status: 'approved' });
+    if (e2) throw new Error(e2.message);
+  } catch (e) { return fail(fd, e.message); }
+  revalidatePath('/contractors');
+  redirect('/contractors?saved=1');
+}

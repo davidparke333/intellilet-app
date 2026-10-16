@@ -83,7 +83,8 @@ export default async function Property({ params, searchParams }) {
       </div>
 
       <div className="card"><div className="row"><h3>Repairs</h3><span className={'pill ' + (openRepairs ? 'due' : 'ok')}>{openRepairs || 0} open</span></div>
-        <span className="muted small">The repairs screens come next in the build.</span></div>
+        <div className="row">{openRepairs ? <Link className="small" href="/repairs">See repairs</Link> : <span className="muted small">Nothing open.</span>}
+          {staff && <Link className="btn ghost small" href={`/repairs/new?p=${id}`}>Log a repair</Link>}</div></div>
     </>
   );
 }

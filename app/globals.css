@@ -131,3 +131,4 @@ input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);bo
 .note{background:var(--info);color:var(--info-ink);border-radius:12px;padding:10px 12px;font-size:14px}
 .proplink{text-decoration:none;color:inherit}
 .pager{display:flex;justify-content:space-between;align-items:center}
+.problem { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 10px; background: var(--soft, rgba(0,0,0,.04)); }
