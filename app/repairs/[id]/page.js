@@ -5,7 +5,8 @@ import ActionForm from '@/components/ActionForm';
 import FileField from '@/components/FileField';
 import CostFields from '@/components/CostFields';
 import DampCard from './DampCard';
-import { PRIORITY, statusLabel, FIX_CHECKS, TRADE_FOR, GO_AHEAD_REASONS, daysOpen, pastTarget, repairNext, money, fmt, daysUntil } from '@/lib/rules';
+import { PRIORITY, statusLabel, FIX_CHECKS, quoteState, TRADE_FOR, GO_AHEAD_REASONS, daysOpen, pastTarget, repairNext, money, fmt, daysUntil } from '@/lib/rules';
+import { recordQuote, approveQuote, releaseContractor } from '../actions';
 import { callContractor, quoteDecision, workDone, approveInvoice, queryInvoice, markPaid, verifyFixed, addNote } from '../actions';
 
 const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
@@ -32,6 +33,7 @@ export default async function Repair({ params, searchParams }) {
   const quotes = ev.filter((e) => e.kind === 'quote_sent'), decisions = ev.filter((e) => e.kind === 'quote_decision');
   const cleared = Math.max(0, ...decisions.filter((e) => ['approved', 'proceeded'].includes(e.detail.status)).map((e) => Number(e.detail.amount) || 0));
   const waitingQuote = quotes.length > decisions.length ? quotes[quotes.length - 1] : null;
+  const Q = quoteState(ev, limit);
   const st = statusLabel(r), pr = PRIORITY[r.priority];
   const lead = r.tenancies && (r.tenancies.tenancy_people || []).find((x) => x.is_lead);
   const inv = (invoices || [])[0];
@@ -123,9 +125,66 @@ export default async function Repair({ params, searchParams }) {
         </div>
       )}
 
-      {staff && r.status === 'assigned' && (
+      {staff && r.status === 'assigned' && (Q.stage === 'none' || Q.stage === 'declined') && (
+        <div className="card">
+          <Next text={Q.stage === 'declined' ? 'The quote was declined' : 'Get the contractor\'s quote'} sub={Q.stage === 'declined' ? (Q.decision.detail.text || '') + '. Ask the contractor for a different price, or release them and book someone else.' : 'After their visit, the contractor tells you what is needed and the price. They can also send it from their portal. Within ' + money(Math.max(limit, cleared)) + ' you can approve it; above that the landlord must.'} />
+          <ActionForm className="stack" action={recordQuote.bind(null, id)}>
+            <div className="grid2">
+              <div className="field"><label htmlFor="qa">Quote total (£, including any VAT)</label><input id="qa" name="amount" inputMode="decimal" placeholder="0.00" /></div>
+              <div className="field"><label htmlFor="qw">Work needed</label><input id="qw" name="work" placeholder="e.g. Replace diverter valve" /></div>
+            </div>
+            <FileField label="Their quote (optional)" agencyId={member.agency_id} propertyId={r.properties.id} prefix="quotefile" />
+            <button className="btn">Record quote</button>
+          </ActionForm>
+          {Q.stage === 'none' && <details className="more"><summary>Small job, already fixed on the first visit?</summary><ActionForm className="stack" action={workDone.bind(null, id)}>
+          <Next text={Q.stage === 'approved' ? 'Work approved up to ' + money(Q.amount) + ': mark it done when finished' : 'Small job, fixed on the first visit'} sub="Use this when the contractor says it's finished. Next you'll check it's really fixed, before anything is paid." />
+          <div className="field"><label htmlFor="wd">What was done</label><input id="wd" name="work_done" placeholder="e.g. Replaced diverter valve, hot water working" /></div>
+          <CostFields vatRegistered={!!(r.contractors && r.contractors.vat_registered)} />
+          <div className="field"><label htmlFor="rf">Their invoice number</label><input id="rf" name="reference" /></div>
+          {[1, 2].map((n) => <FileField key={n} label={'Photo after the work ' + n + ' (optional)'} agencyId={member.agency_id} propertyId={r.properties.id} prefix={'after' + n} />)}
+          <button className="btn">Confirm work done</button>
+          <span className="muted small">All amounts 0 means no charge, and the repair closes straight away.</span>
+        </ActionForm></details>}
+          <details className="more"><summary>Release this contractor</summary>
+            <ActionForm className="stack" action={releaseContractor.bind(null, id)}>
+              <div className="field"><label htmlFor="rl">Why</label><input id="rl" name="reason" placeholder="e.g. Landlord declined the price / can't attend in time" /></div>
+              <button className="btn ghost small">Release and book someone else</button></ActionForm></details>
+        </div>
+      )}
+
+      {staff && r.status === 'assigned' && Q.stage === 'staff' && (
+        <div className="card">
+          <Next text={'Approve the quote: ' + money(Q.amount)} sub={(Q.quote.detail.work || '') + '. Within the landlord\'s ' + money(Math.max(limit, cleared)) + ' limit, so you can approve it.'} />
+          <form action={approveQuote.bind(null, id, Q.amount)}><button className="btn" style={{ width: '100%' }}>Approve and tell the contractor to go ahead</button></form>
+          <details className="more"><summary>Price not right?</summary>
+            <ActionForm className="stack" action={releaseContractor.bind(null, id)}>
+              <div className="field"><label htmlFor="rl2">Why</label><input id="rl2" name="reason" placeholder="e.g. Too expensive, getting another quote" /></div>
+              <button className="btn ghost small">Release and book someone else</button></ActionForm></details>
+        </div>
+      )}
+
+      {staff && r.status === 'assigned' && Q.stage === 'landlord' && (
+        <div className="card">
+          <Next text={'Waiting for the landlord to approve ' + money(Q.amount)} sub={(Q.quote.detail.work || '') + '. Above their ' + money(Math.max(limit, cleared)) + ' limit. They can approve it in their portal, or record their answer here.'} />
+          <span className="small">Landlord: {lc.full_name || ''} {lc.phone ? <a href={'tel:' + lc.phone}>{lc.phone}</a> : ''}</span>
+          <ActionForm className="stack" action={quoteDecision.bind(null, id)}>
+            <input type="hidden" name="amount" value={(Q.amount / 100).toFixed(2)} />
+            <div className="field"><label htmlFor="qn2">Landlord's answer or note</label><input id="qn2" name="note" placeholder="e.g. approved by phone" /></div>
+            <div style={two}><button className="btn" name="status" value="approved">Landlord approved</button><button className="btn ghost" name="status" value="declined">Landlord declined</button></div>
+          </ActionForm>
+          {(r.priority !== 'routine' || daysOpen(Q.quote.at) >= 3) && (
+            <details className="more"><summary>Can't wait for the landlord?</summary>
+              <ActionForm className="stack" action={quoteDecision.bind(null, id)}>
+                <input type="hidden" name="amount" value={(Q.amount / 100).toFixed(2)} /><input type="hidden" name="status" value="proceeded" />
+                <div className="field"><label htmlFor="ga2">Go ahead without a reply because</label><select id="ga2" name="note">{GO_AHEAD_REASONS.map((x) => <option key={x}>{x}</option>)}</select></div>
+                <button className="btn ghost">Go ahead and tell the landlord</button>
+              </ActionForm></details>)}
+        </div>
+      )}
+
+      {staff && r.status === 'assigned' && Q.stage === 'approved' && (
         <ActionForm className="card" action={workDone.bind(null, id)}>
-          <Next text={next} sub="Use this when the contractor says it's finished. Next you'll check it's really fixed, before anything is paid." />
+          <Next text={Q.stage === 'approved' ? 'Work approved up to ' + money(Q.amount) + ': mark it done when finished' : 'Small job, fixed on the first visit'} sub="Use this when the contractor says it's finished. Next you'll check it's really fixed, before anything is paid." />
           <div className="field"><label htmlFor="wd">What was done</label><input id="wd" name="work_done" placeholder="e.g. Replaced diverter valve, hot water working" /></div>
           <CostFields vatRegistered={!!(r.contractors && r.contractors.vat_registered)} />
           <div className="field"><label htmlFor="rf">Their invoice number</label><input id="rf" name="reference" /></div>
@@ -161,6 +220,7 @@ export default async function Repair({ params, searchParams }) {
           <div className="row small"><span>Parts</span><span>{money(inv.parts_pence)}</span></div>
           {inv.vat_pence > 0 && <div className="row small"><span>VAT</span><span>{money(inv.vat_pence)}</span></div>}
           <div className="row"><b>Total</b><b>{money(inv.total_pence)}</b></div>
+          {Q.stage === 'approved' && inv.total_pence > Q.amount && <div className="error">{money(inv.total_pence - Q.amount)} more than the approved quote of {money(Q.amount)}. Ask the contractor why before approving.</div>}
           {r.spend_limit_pence && inv.total_pence > r.spend_limit_pence && <div className="error">{money(inv.total_pence - r.spend_limit_pence)} over the {money(r.spend_limit_pence)} spend limit for this job</div>}
           {inv.total_pence > Math.max(limit, cleared) && r.priority !== 'emergency' && <div className="note">Above the landlord's {money(Math.max(limit, cleared))} limit. Tell them before you approve.</div>}
           <form action={approveInvoice.bind(null, id)}><button className="btn" style={{ width: '100%' }}>Approve {money(inv.total_pence)}</button></form>

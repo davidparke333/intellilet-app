@@ -47,3 +47,23 @@ export async function contractorDone(repairId, _prev, fd) {
   if (error) return fail(fd, error.message);
   revalidatePath('/portal'); redirect('/portal?saved=' + encodeURIComponent('Thank you. The job is marked done and your invoice has been sent for approval.'));
 }
+
+// A contractor sends their quote after visiting
+export async function contractorQuote(repairId, _prev, fd) {
+  const { sb, member } = await currentMember();
+  if (!member || member.role !== 'contractor') redirect('/portal');
+  const amount = pence(fd, 'amount');
+  if (!amount) return fail(fd, 'Enter the total price, like 480.00');
+  const { error } = await sb.rpc('contractor_quote', { p_repair: repairId, p_amount: amount, p_text: txt(fd, 'work') });
+  if (error) return fail(fd, /contractor_quote/.test(error.message) ? 'The agency needs to finish a system update first' : error.message);
+  revalidatePath('/portal'); redirect('/portal?saved=' + encodeURIComponent('Thank you. Your quote has been sent. Please wait for approval before starting the work.'));
+}
+// A landlord approves or declines a quote
+export async function landlordDecision(repairId, approve, _prev, fd) {
+  const { sb, member } = await currentMember();
+  if (!member || member.role !== 'landlord') redirect('/portal');
+  if (!approve && txt(fd, 'note').length < 3) return fail(fd, 'Please say why, so we can get a better price or another option');
+  const { error } = await sb.rpc('landlord_quote_decision', { p_repair: repairId, p_approve: approve, p_note: txt(fd, 'note') });
+  if (error) return fail(fd, error.message);
+  revalidatePath('/portal'); redirect('/portal?saved=' + encodeURIComponent(approve ? 'Thank you. The contractor will be told to go ahead.' : 'Thank you. We will look at other options and be in touch.'));
+}

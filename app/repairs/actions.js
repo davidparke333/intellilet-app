@@ -266,3 +266,36 @@ export async function dampCloseNoWork(id) {
   await logEvent(sb, member.agency_id, id, 'status', { text: 'Closed: investigation found no repair work needed, summary and advice given to the tenant. Closed by ' + user.email });
   done(id, 'Closed with no repair work needed');
 }
+
+// ---------- Quotes once a contractor is booked ----------
+export async function recordQuote(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  const amount = pence(fd, 'amount'), work = txt(fd, 'work');
+  if (!amount) return fail(fd, 'Enter the quote total, like 480.00');
+  if (!work) return fail(fd, 'Say what work the quote is for');
+  try {
+    await logEvent(sb, member.agency_id, id, 'quote', { amount, work, by: 'staff', text: 'Quote received from the contractor: ' + money(amount) + ' for ' + work });
+    await addPhoto(sb, member.agency_id, fd, 'quotefile', id, 'contractor quote');
+  } catch (e) { return fail(fd, e.message); }
+  done(id, 'Quote recorded');
+}
+// Within the landlord's limit: staff approve and tell the contractor to go ahead
+export async function approveQuote(id, amount) {
+  const { sb, member, user } = await staffOnly();
+  const { data: r } = await sb.from('repairs').select('properties(property_owners(landlords(approval_limit_pence)))').eq('id', id).single();
+  const own = r && r.properties && r.properties.property_owners && r.properties.property_owners[0];
+  const cap = (own && own.landlords && own.landlords.approval_limit_pence) || 25000;
+  if (amount > cap) redirect(`/repairs/${id}?error=${encodeURIComponent('This quote is above the landlord\'s ' + money(cap) + ' limit, so the landlord must approve it')}`);
+  await logEvent(sb, member.agency_id, id, 'quote_decision', { status: 'approved', amount, by: 'staff', note: 'within landlord limit', text: 'Quote of ' + money(amount) + ' approved by ' + user.email + ' (within the landlord\'s limit). Contractor told to go ahead' });
+  done(id, 'Quote approved. Tell the contractor to go ahead');
+}
+// Landlord said no, or the contractor can't do it: free the job up for another contractor
+export async function releaseContractor(id, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  if (!txt(fd, 'reason')) return fail(fd, 'Say why');
+  const { data: r } = await sb.from('repairs').select('contractors(contacts(full_name))').eq('id', id).single();
+  const { error } = await sb.from('repairs').update({ status: 'reported', contractor_id: null, assigned_at: null }).eq('id', id);
+  if (error) return fail(fd, error.message);
+  await logEvent(sb, member.agency_id, id, 'status', { text: 'Released ' + ((r && r.contractors && r.contractors.contacts.full_name) || 'the contractor') + ': ' + txt(fd, 'reason') + '. Looking for another contractor' });
+  done(id, 'Contractor released. Book another one');
+}

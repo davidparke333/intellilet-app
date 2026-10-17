@@ -3,8 +3,8 @@ import { redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import ActionForm from '@/components/ActionForm';
 import CostFields from '@/components/CostFields';
-import { CERTS, certStatus, dampStages, inspectionDue, fmt, money, PRIORITY } from '@/lib/rules';
-import { contractorDone } from './actions';
+import { CERTS, certStatus, dampStages, inspectionDue, quoteState, fmt, money, PRIORITY } from '@/lib/rules';
+import { contractorDone, contractorQuote, landlordDecision } from './actions';
 import { exitPreview } from '../access/actions';
 const NONE = ['00000000-0000-0000-0000-000000000000'];
 const ids = (a) => (a && a.length ? a : NONE);
@@ -30,7 +30,7 @@ export default async function Portal({ searchParams }) {
 
   // ---------------- landlord ----------------
   if (role === 'landlord') {
-    const { data: ll } = await sb.from('landlords').select('id').eq('contact_id', member.contact_id).limit(1).maybeSingle();
+    const { data: ll } = await sb.from('landlords').select('id, approval_limit_pence').eq('contact_id', member.contact_id).limit(1).maybeSingle();
     const { data: own } = await sb.from('property_owners').select('property_id').eq('landlord_id', ll ? ll.id : NONE[0]);
     const pids = ids((own || []).map((o) => o.property_id));
     const [{ data: props }, { data: certs }, { data: reps }, { data: insps }, { data: bal }, { data: tens }] = await Promise.all([
@@ -41,10 +41,25 @@ export default async function Portal({ searchParams }) {
       sb.from('landlord_balances').select('balance_pence').eq('landlord_id', ll ? ll.id : NONE[0]).maybeSingle(),
       sb.from('tenancies').select('property_id, status, rent_pence, start_date').in('property_id', pids)
     ]);
+    const { data: lev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', ids((reps || []).map((r) => r.id))).in('kind', ['quote', 'quote_decision']).order('at');
+    const cap = (ll && ll.approval_limit_pence) || 25000;
+    const waiting = (reps || []).filter((r) => r.status === 'assigned').map((r) => ({ r, Q: quoteState((lev || []).filter((e) => e.repair_id === r.id), cap) })).filter((x) => x.Q.stage === 'landlord');
+    const addr = Object.fromEntries((props || []).map((p) => [p.id, p.address_line1]));
     return (<>
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
       <div className="pagehead"><h1>Your properties</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
       {saved}
+      {waiting.map(({ r, Q }) => (
+        <div key={r.id} className="card" style={{ borderColor: 'var(--accent)' }}>
+          <div className="nextbox"><span className="small" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--accent)' }}>Your approval needed</span>
+            <b>Quote of {money(Q.amount)}: {addr[r.property_id]}</b><span className="small">{r.category}: {r.description}</span><span className="small"><b>Work:</b> {Q.quote.detail.work}</span>
+            <span className="muted small">This is above your {money(cap)} limit for us to approve repairs without asking you.</span></div>
+          <ActionForm className="stack" action={landlordDecision.bind(null, r.id, true)}><button className="btn">Approve {money(Q.amount)}</button></ActionForm>
+          <details className="more"><summary>Decline or ask a question</summary>
+            <ActionForm className="stack" action={landlordDecision.bind(null, r.id, false)}>
+              <div className="field"><label htmlFor={'dn' + r.id}>Why (we'll get back to you)</label><input id={'dn' + r.id} name="note" placeholder="e.g. Please get a second quote" /></div>
+              <button className="btn ghost small">Decline</button></ActionForm></details>
+        </div>))}
       {(props || []).map((p) => {
         const st = CERTS.map((c) => ({ c, s: certStatus(c, (certs || []).find((x) => x.property_id === p.id && x.kind === c.key)) }));
         const legalOk = st.filter((x) => x.c.basis === 'law').every((x) => x.s.ok);
@@ -125,6 +140,8 @@ export default async function Portal({ searchParams }) {
     sb.from('invoices').select('repair_id, status, total_pence, created_at').eq('contractor_id', cid)
   ]);
   const live = (jobs || []).filter((j) => j.status === 'assigned'), past = (jobs || []).filter((j) => j.status !== 'assigned');
+  const { data: cev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', ids(live.map((j) => j.id))).in('kind', ['quote', 'quote_decision']).order('at');
+  const qOf = (j) => quoteState((cev || []).filter((e) => e.repair_id === j.id), Infinity);
   const contacts = Object.fromEntries(await Promise.all(live.map(async (j) => [j.id, ((await sb.rpc('contractor_job_contact', { p_repair: j.id })).data || [])])));
   const invLabel = { submitted: 'Invoice sent, waiting for approval', queried: 'Invoice queried, we will contact you', approved: 'Approved, payment on its way', paid: 'Paid' };
   return (<>
@@ -141,6 +158,17 @@ export default async function Portal({ searchParams }) {
         <span className="small">{j.access_with_key ? 'Tenant is happy for the agency key to be used if they are out' : 'Tenant must be in'}{j.best_times ? ' · best times: ' + j.best_times : ''}</span>
         {j.spend_limit_pence && <span className="small"><b>Don't go over {money(j.spend_limit_pence)}{me2 && me2.vat_registered ? ' plus VAT' : ''} without calling us first.</b></span>}
         {j.is_damp && <span className="small">Damp and mould job: please note the cause on your invoice and fix the cause, not just the mould.</span>}
+        {(() => { const Q = qOf(j); return (<>
+        {Q.stage === 'staff' && <div className="note small">Quote of {money(Q.amount)} sent. Please wait for approval before starting.</div>}
+        {Q.stage === 'approved' && <div className="note small"><b>Approved: go ahead</b>, up to {money(Q.amount)} for {Q.quote.detail.work}.</div>}
+        {Q.stage === 'declined' && <div className="error small">Your quote of {money(Q.amount)} wasn't approved. The agency will be in touch.</div>}
+        {(Q.stage === 'none' || Q.stage === 'declined') && <details className="more" open={Q.stage === 'none'}><summary>Send your quote</summary>
+          <ActionForm className="stack" action={contractorQuote.bind(null, j.id)}>
+            <span className="muted small">After your visit: what's needed and the total price. Don't start until it's approved, unless it's a small job you've already fixed (then send the invoice below).</span>
+            <div className="field"><label htmlFor={'qw' + j.id}>Work needed</label><input id={'qw' + j.id} name="work" placeholder="e.g. Replace consumer unit" /></div>
+            <div className="field"><label htmlFor={'qa' + j.id}>Total price (£, including any VAT)</label><input id={'qa' + j.id} name="amount" inputMode="decimal" placeholder="0.00" /></div>
+            <button className="btn">Send quote</button></ActionForm></details>}
+        </>); })()}
         <details className="more"><summary>Job finished? Send your invoice</summary>
           <ActionForm className="stack" action={contractorDone.bind(null, j.id)}>
             <div className="field"><label htmlFor={'wd' + j.id}>What you did</label><input id={'wd' + j.id} name="work_done" placeholder="e.g. Replaced socket, tested circuit" /></div>

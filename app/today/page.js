@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import TopBar from '../topbar';
 import { currentMember, isStaff } from '@/lib/supabase/server';
-import { CERTS, certStatus, depositStatus, prescribedInfo, inspectionDue, dampStages, pastTarget, statusLabel, daysUntil, money, fmt, todayISO, INSPECT_MONTHS, PRIORITY } from '@/lib/rules';
+import { quoteState, CERTS, certStatus, depositStatus, prescribedInfo, inspectionDue, dampStages, pastTarget, statusLabel, daysUntil, money, fmt, todayISO, INSPECT_MONTHS, PRIORITY, daysOpen } from '@/lib/rules';
 import { ensureCharges, rentAccount } from '@/lib/money';
 import { redirect } from 'next/navigation';
 
@@ -11,7 +11,7 @@ export default async function Today() {
   if (!isStaff(member)) redirect('/portal');
   const [{ data: props }, { data: reps }, { data: tens }, { data: certs }, { data: insps }, { data: cons }, { data: bals }, { data: setting }] = await Promise.all([
     sb.from('properties').select('id, address_line1, onboarding_status').is('archived_at', null),
-    sb.from('repairs').select('*, properties(address_line1)').not('status', 'in', '(cancelled)').order('reported_at'),
+    sb.from('repairs').select('*, properties(address_line1, property_owners(landlords(approval_limit_pence)))').not('status', 'in', '(cancelled)').order('reported_at'),
     sb.from('tenancies').select('*, properties(address_line1)').in('status', ['active', 'pending']),
     sb.from('current_certificates').select('*'),
     sb.from('inspections').select('property_id, inspected_on').order('inspected_on', { ascending: false }),
@@ -23,6 +23,7 @@ export default async function Today() {
   await ensureCharges(sb, member.agency_id, T.filter((t) => t.start_date <= todayISO()));
   const [{ data: charges }, { data: led }] = await Promise.all([sb.from('rent_charges').select('*'), sb.from('ledger_entries').select('tenancy_id, rent_charge_id, category, memo, amount_pence, account')]);
 
+  const { data: qev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', (reps || []).filter((r) => r.status === 'assigned').map((r) => r.id).concat('00000000-0000-0000-0000-000000000000')).in('kind', ['quote', 'quote_decision']).order('at');
   const items = []; // level: 0 = now (legal or overdue), 1 = this week, 2 = coming up
   const add = (level, area, text, sub, href) => items.push({ level, area, text, sub, href });
 
@@ -30,6 +31,12 @@ export default async function Today() {
     const a = r.properties ? r.properties.address_line1 : '', href = '/repairs/' + r.id;
     if (r.is_damp) { const D = dampStages(r); if (D && D.next && r.status !== 'paid') { add(D.overdue ? 0 : D.next.st.cls === 'due' ? 0 : 1, 'Damp and mould', (D.overdue ? 'OVERDUE: ' : '') + D.next.label + ', ' + a, D.next.st.text + ' · legal deadline', href); continue; } }
     if (r.status === 'reported') add(r.priority === 'emergency' || pastTarget(r) ? 0 : 1, 'Repairs', 'Book a contractor: ' + r.category + ', ' + a, PRIORITY[r.priority].label + (pastTarget(r) ? ' · past target' : ''), href);
+    else if (r.status === 'assigned' && (() => { const own = r.properties && r.properties.property_owners && r.properties.property_owners[0];
+      const Q = quoteState((qev || []).filter((e) => e.repair_id === r.id), (own && own.landlords && own.landlords.approval_limit_pence) || 25000);
+      if (Q.stage === 'staff') { add(1, 'Repairs', 'Approve the quote: ' + money(Q.amount) + ', ' + a, Q.quote.detail.work || r.category, href); return true; }
+      if (Q.stage === 'landlord') { add(daysOpen(Q.quote.at) >= 2 ? 1 : 2, 'Repairs', 'Waiting for the landlord: ' + money(Q.amount) + ' quote, ' + a, 'Above their limit. Chase them if no answer', href); return true; }
+      if (Q.stage === 'declined') { add(1, 'Repairs', 'Quote declined: ' + r.category + ', ' + a, 'Get another price or release the contractor', href); return true; }
+      return false; })()) {}
     else if (r.status === 'assigned' && pastTarget(r)) add(1, 'Repairs', 'Chase the contractor: ' + r.category + ', ' + a, 'Past the ' + PRIORITY[r.priority].days + '-day target', href);
     else if (r.status === 'invoiced') add(1, 'Repairs', (r.verified_at ? 'Approve the invoice: ' : 'Check it\'s fixed: ') + r.category + ', ' + a, statusLabel(r)[1], href);
     else if (r.status === 'approved') add(1, 'Repairs', 'Pay the contractor: ' + r.category + ', ' + a, 'Invoice approved', href);
