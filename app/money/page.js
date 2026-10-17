@@ -31,6 +31,9 @@ export default async function Money({ searchParams }) {
   const client = E.filter((e) => e.account === 'client').reduce((s, e) => s + Number(e.amount_pence), 0);
   const unassigned = E.filter((e) => e.account === 'client' && !e.landlord_id).reduce((s, e) => s + Number(e.amount_pence), 0);
   const office = E.filter((e) => e.account === 'office').reduce((s, e) => s + Number(e.amount_pence), 0);
+  const officeLines = E.filter((e) => e.account === 'office').sort((a, b) => String(b.entry_date).localeCompare(a.entry_date) || b.id - a.id).slice(0, 50)
+    .map((e) => ({ ...e, properties: (T.find((t) => t.id === e.tenancy_id) || {}).properties }));
+  const feesThis = E.filter((e) => e.account === 'office' && e.entry_date >= thisMonth).reduce((s, e) => s + Number(e.amount_pence), 0);
   const bank = sp.bank ? Math.round(parseFloat(String(sp.bank).replace(/[£,\s]/g, '')) * 100) : null;
   const balOf = (id) => Number(((bals || []).find((b) => b.landlord_id === id) || {}).balance_pence || 0);
   const tenantOf = (t) => (t.tenancy_people || []).map((p) => p.contacts && p.contacts.full_name).filter(Boolean).join(' & ') || 'Tenant';
@@ -86,6 +89,15 @@ export default async function Money({ searchParams }) {
           {client < 0 && <div className="error">The client account total is below zero. That would mean money has been paid out that no client had sent in. Check each landlord under Landlords, and record any money a landlord has sent.</div>}
           {unassigned !== 0 && <span className="error small">Some client money isn't linked to a landlord. Every penny in the client account must belong to someone: check those entries.</span>}
         </div>
+        <div className="card">
+          <h3>Office account</h3>
+          <span className="muted small">Your own money: management fees, which move here from client money once each month's rent is paid in full. Transfer them to your office bank account.</span>
+          <div className="row"><span>Fees earned in {monthName(thisMonth)}</span><b>{money(feesThis)}</b></div>
+          <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}><b>Total fees earned</b><b>{money(office)}</b></div>
+          {officeLines.length > 0 && <details className="more"><summary>Fee lines ({officeLines.length})</summary>
+            {officeLines.map((e) => <div key={e.id} className="row small"><span>{fmt(e.entry_date)} · {e.memo}{e.properties ? ' · ' + e.properties.address_line1 : ''}</span><span>{money(e.amount_pence)}</span></div>)}
+          </details>}
+        </div>
         <form className="card" method="get">
           <input type="hidden" name="t" value="client" />
           <h3>Check against the bank</h3>
@@ -105,8 +117,7 @@ export default async function Money({ searchParams }) {
           </div>
           <button className="btn ghost">Download</button>
         </form>
-        <div className="card"><div className="row"><span>Office account (fees earned)</span><b>{money(office)}</b></div>
-          <span className="muted small">Fees move here from client money once each month's rent is paid in full. Transfer them to your office bank account.</span></div>
+
       </>)}
     </>
   );
