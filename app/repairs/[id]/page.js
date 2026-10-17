@@ -127,7 +127,7 @@ export default async function Repair({ params, searchParams }) {
 
       {staff && r.status === 'assigned' && (Q.stage === 'none' || Q.stage === 'declined') && (
         <div className="card">
-          <Next text={Q.stage === 'declined' ? 'The quote was declined' : 'Get the contractor\'s quote'} sub={Q.stage === 'declined' ? (Q.decision.detail.text || '') + '. Ask the contractor for a different price, or release them and book someone else.' : 'After their visit, the contractor tells you what is needed and the price. They can also send it from their portal. Within ' + money(Math.max(limit, cleared)) + ' you can approve it; above that the landlord must.'} />
+          <Next text={Q.stage === 'declined' ? 'The quote was declined' : 'Get the contractor\'s quote'} sub={Q.stage === 'declined' ? (Q.decision.detail.text || '') + '. Ask the contractor for a different price, or release them and book someone else.' : 'After their visit, the contractor tells you what is needed and the price. Record it here when they text, phone or email it (they can also send it from their portal). Within ' + money(Math.max(limit, cleared)) + ' you can approve it; above that the landlord must.'} />
           <ActionForm className="stack" action={recordQuote.bind(null, id)}>
             <div className="grid2">
               <div className="field"><label htmlFor="qa">Quote total (£, including any VAT)</label><input id="qa" name="amount" inputMode="decimal" placeholder="0.00" /></div>
@@ -165,7 +165,7 @@ export default async function Repair({ params, searchParams }) {
 
       {staff && r.status === 'assigned' && Q.stage === 'landlord' && (
         <div className="card">
-          <Next text={'Waiting for the landlord to approve ' + money(Q.amount)} sub={(Q.quote.detail.work || '') + '. Above their ' + money(Math.max(limit, cleared)) + ' limit. They can approve it in their portal, or record their answer here.'} />
+          <Next text={'Waiting for the landlord to approve ' + money(Q.amount)} sub={(Q.quote.detail.work || '') + '. Above their ' + money(Math.max(limit, cleared)) + ' limit. Phone or email them, then record their answer here.'} />
           <span className="small">Landlord: {lc.full_name || ''} {lc.phone ? <a href={'tel:' + lc.phone}>{lc.phone}</a> : ''}</span>
           <ActionForm className="stack" action={quoteDecision.bind(null, id)}>
             <input type="hidden" name="amount" value={(Q.amount / 100).toFixed(2)} />

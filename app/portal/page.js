@@ -4,7 +4,7 @@ import { currentMember, isStaff } from '@/lib/supabase/server';
 import ActionForm from '@/components/ActionForm';
 import CostFields from '@/components/CostFields';
 import { CERTS, certStatus, dampStages, inspectionDue, quoteState, fmt, money, PRIORITY } from '@/lib/rules';
-import { contractorDone, contractorQuote, landlordDecision } from './actions';
+import { contractorDone, contractorQuote } from './actions';
 import { exitPreview } from '../access/actions';
 const NONE = ['00000000-0000-0000-0000-000000000000'];
 const ids = (a) => (a && a.length ? a : NONE);
@@ -49,17 +49,6 @@ export default async function Portal({ searchParams }) {
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
       <div className="pagehead"><h1>Your properties</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
       {saved}
-      {waiting.map(({ r, Q }) => (
-        <div key={r.id} className="card" style={{ borderColor: 'var(--accent)' }}>
-          <div className="nextbox"><span className="small" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--accent)' }}>Your approval needed</span>
-            <b>Quote of {money(Q.amount)}: {addr[r.property_id]}</b><span className="small">{r.category}: {r.description}</span><span className="small"><b>Work:</b> {Q.quote.detail.work}</span>
-            <span className="muted small">This is above your {money(cap)} limit for us to approve repairs without asking you.</span></div>
-          <ActionForm className="stack" action={landlordDecision.bind(null, r.id, true)}><button className="btn">Approve {money(Q.amount)}</button></ActionForm>
-          <details className="more"><summary>Decline or ask a question</summary>
-            <ActionForm className="stack" action={landlordDecision.bind(null, r.id, false)}>
-              <div className="field"><label htmlFor={'dn' + r.id}>Why (we'll get back to you)</label><input id={'dn' + r.id} name="note" placeholder="e.g. Please get a second quote" /></div>
-              <button className="btn ghost small">Decline</button></ActionForm></details>
-        </div>))}
       {(props || []).map((p) => {
         const st = CERTS.map((c) => ({ c, s: certStatus(c, (certs || []).find((x) => x.property_id === p.id && x.kind === c.key)) }));
         const legalOk = st.filter((x) => x.c.basis === 'law').every((x) => x.s.ok);
