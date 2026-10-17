@@ -43,7 +43,9 @@ export default async function Portal({ searchParams }) {
     ]);
     const { data: lev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', ids((reps || []).map((r) => r.id))).in('kind', ['quote', 'quote_decision']).order('at');
     const cap = (ll && ll.approval_limit_pence) || 25000;
-    const waiting = (reps || []).filter((r) => r.status === 'assigned').map((r) => ({ r, Q: quoteState((lev || []).filter((e) => e.repair_id === r.id), cap) })).filter((x) => x.Q.stage === 'landlord');
+    // what the landlord is told about a booked job's quote (staff handle approval by phone or email)
+    const quoteNote = (r) => { if (r.status !== 'assigned') return null; const Q = quoteState((lev || []).filter((e) => e.repair_id === r.id), cap);
+      return Q.stage === 'landlord' ? ['due', 'Quote ' + money(Q.amount) + ': we\'ll contact you for approval'] : Q.stage === 'staff' ? ['info', 'Quote ' + money(Q.amount) + ' received'] : Q.stage === 'approved' ? ['info', 'Approved ' + money(Q.amount) + ': work going ahead'] : Q.stage === 'declined' ? ['due', 'Quote declined: finding another option'] : null; };
     const addr = Object.fromEntries((props || []).map((p) => [p.id, p.address_line1]));
     return (<>
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
@@ -60,9 +62,10 @@ export default async function Portal({ searchParams }) {
           <details className="more"><summary>Safety certificates</summary>
             {st.map(({ c, s }) => <div key={c.key} className="row small"><span>{c.label}{c.basis === 'policy' ? ' (our schedule)' : ''}</span><span className={'pill ' + s.cls}>{s.text}</span></div>)}</details>
           <div className="row small"><span>Repairs in progress</span><b>{open.length}</b></div>
-          {open.map((r) => { const pl = plain(r), D = r.is_damp ? dampStages(r) : null; return (
+          {open.map((r) => { const pl = quoteNote(r) || plain(r), D = r.is_damp ? dampStages(r) : null; return (
             <div key={r.id} className="stack small" style={{ gap: 2, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
               <div className="row"><span>{r.category}: {r.description.slice(0, 70)}</span><span className={'pill ' + pl[0]}>{pl[1]}</span></div>
+              {r.status === 'assigned' && (() => { const Q = quoteState((lev || []).filter((e) => e.repair_id === r.id), cap); return Q.quote && Q.quote.detail.work ? <span className="muted">Work quoted: {Q.quote.detail.work}</span> : null; })()}
               <span className="muted">Reported {fmt(String(r.reported_at).slice(0, 10))}{D && D.next ? ' · damp and mould legal step: ' + D.next.label.toLowerCase() + ', ' + D.next.st.text.toLowerCase() : ''}</span></div>); })}
           <span className="small">{last ? <>Last inspected {fmt(last.inspected_on)} · <Link href={'/portal/report/' + last.id}>Inspection report</Link></> : 'Not inspected yet'}</span>
         </div>); })}
