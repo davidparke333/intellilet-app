@@ -5,7 +5,7 @@ import PrintButton from '@/components/PrintButton';
 import { money, fmt, todayISO } from '@/lib/rules';
 import { monthOf, addMonth, monthName } from '@/lib/money';
 
-const LABEL = { 'rent received': 'Rent received', 'management fee': 'Management fee', 'contractor payment': 'Repair paid', 'landlord payout': 'Paid to you', reversal: 'Correction', adjustment: 'Adjustment' };
+const LABEL = { 'rent received': 'Rent received', 'management fee': 'Management fee', 'contractor payment': 'Repair paid', 'landlord payout': 'Paid to you', reversal: 'Correction', adjustment: 'Money from you' };
 
 // A landlord's monthly statement from the client account ledger: opening balance, every movement, closing balance.
 export default async function Statement({ params, searchParams }) {

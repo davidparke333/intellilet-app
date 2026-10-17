@@ -140,6 +140,11 @@ export async function markPaid(id) {
   const { data: inv } = await sb.from('invoices').select('id, total_pence, reference').eq('repair_id', id).eq('status', 'approved').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!inv) redirect(`/repairs/${id}?error=${encodeURIComponent('No approved invoice to pay')}`);
   const landlord_id = r.properties && r.properties.property_owners && r.properties.property_owners[0] ? r.properties.property_owners[0].landlord_id : null;
+  // Client money rule: a landlord's bills are paid only from money held for that landlord
+  const { data: bal } = landlord_id ? await sb.from('landlord_balances').select('balance_pence').eq('landlord_id', landlord_id).maybeSingle() : { data: null };
+  const held = bal ? Number(bal.balance_pence) : 0;
+  if (!landlord_id) redirect(`/repairs/${id}?error=${encodeURIComponent('This property has no landlord recorded, so there is no client money to pay from')}`);
+  if (inv.total_pence > held) redirect(`/repairs/${id}?error=${encodeURIComponent('Not paid: only ' + money(held) + ' is held for this landlord, and the invoice is ' + money(inv.total_pence) + '. Ask the landlord to send ' + money(inv.total_pence - held) + ' first, record it under Money, Landlords, then pay. Paying now would use other clients\' money')}`);
   const { error } = await sb.from('ledger_entries').insert({ agency_id: member.agency_id, entry_date: new Date().toISOString().slice(0, 10), account: 'client', amount_pence: -inv.total_pence,
     category: 'contractor payment', reference: inv.reference || 'REPAIR-' + id.slice(0, 8).toUpperCase(), property_id: r.property_id, landlord_id, contractor_id: r.contractor_id, invoice_id: inv.id, memo: 'Repair invoice paid' });
   if (error) redirect(`/repairs/${id}?error=${encodeURIComponent(error.message)}`);

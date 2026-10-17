@@ -108,3 +108,15 @@ export async function payLandlord(landlordId, _prev, fd) {
   if (error) return fail(fd, error.message);
   revalidatePath('/money'); redirect('/money?t=landlords&saved=' + encodeURIComponent(money(amount) + ' payout recorded'));
 }
+
+// Money sent in by a landlord (for example to cover a repair): client money in, held for them.
+export async function landlordFundsIn(landlordId, _prev, fd) {
+  const { sb, member } = await staffOnly();
+  const amount = pence(fd, 'amount'), on = txt(fd, 'received_on'), ref = txt(fd, 'reference');
+  if (!amount) return fail(fd, 'Enter the amount received');
+  if (!isoOk(on) || on > todayISO()) return fail(fd, 'Enter the date it reached the bank (not in the future)');
+  if (!ref) return fail(fd, 'Enter the bank reference');
+  const { error } = await sb.from('ledger_entries').insert({ agency_id: member.agency_id, entry_date: on, account: 'client', amount_pence: amount, category: 'adjustment', reference: ref, landlord_id: landlordId, memo: 'Funds received from landlord' + (txt(fd, 'note') ? ': ' + txt(fd, 'note') : '') });
+  if (error) return fail(fd, error.message);
+  revalidatePath('/money'); redirect('/money?t=landlords&saved=' + encodeURIComponent(money(amount) + ' received from the landlord recorded'));
+}

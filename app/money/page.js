@@ -4,7 +4,7 @@ import ActionForm from '@/components/ActionForm';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { money, fmt, todayISO } from '@/lib/rules';
 import { ensureCharges, rentAccount, monthOf, monthName } from '@/lib/money';
-import { payLandlord } from './actions';
+import { payLandlord, landlordFundsIn } from './actions';
 
 export default async function Money({ searchParams }) {
   const sp = await searchParams;
@@ -61,6 +61,13 @@ export default async function Money({ searchParams }) {
             <span className="muted small">{(l.property_owners || []).map((o) => o.properties && o.properties.address_line1).filter(Boolean).join(', ') || 'No properties'} · fee {money(l.monthly_fee_pence)} a month</span>
             {b < 0 && <div className="error">This landlord's money is below zero: more has been paid out for them than was held. Client money must never go negative. Ask the landlord for funds, or check for a mistake.</div>}
             <Link href={'/money/statement/' + l.id} className="btn ghost small">Statement</Link>
+            {staff && <details className="more" open={b < 0}><summary>Record money received from the landlord</summary>
+              <ActionForm className="stack" action={landlordFundsIn.bind(null, l.id)}>
+                <span className="muted small">For example when they send money to cover a repair. It's held for them in the client account.</span>
+                <div className="grid2"><div className="field"><label htmlFor={'fa' + l.id}>Amount (£)</label><input id={'fa' + l.id} name="amount" inputMode="decimal" defaultValue={b < 0 ? (-b / 100).toFixed(2) : ''} /></div>
+                  <div className="field"><label htmlFor={'fd' + l.id}>Date received</label><input id={'fd' + l.id} name="received_on" type="date" defaultValue={todayISO()} max={todayISO()} /></div></div>
+                <div className="field"><label htmlFor={'fr' + l.id}>Bank reference</label><input id={'fr' + l.id} name="reference" /></div>
+                <button className="btn ghost">Record money received</button></ActionForm></details>}
             {staff && b > 0 && <details className="more"><summary>Record a payout</summary>
               <ActionForm className="stack" action={payLandlord.bind(null, l.id)}>
                 <div className="grid2"><div className="field"><label htmlFor={'pa' + l.id}>Amount (£)</label><input id={'pa' + l.id} name="amount" inputMode="decimal" defaultValue={(b / 100).toFixed(2)} /></div>
@@ -76,6 +83,7 @@ export default async function Money({ searchParams }) {
           <div className="row"><span>Held for landlords</span><b>{money(client - unassigned)}</b></div>
           {unassigned !== 0 && <div className="row"><span>Not linked to a landlord</span><b>{money(unassigned)}</b></div>}
           <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}><b>Should be in the client bank account</b><b>{money(client)}</b></div>
+          {client < 0 && <div className="error">The client account total is below zero. That would mean money has been paid out that no client had sent in. Check each landlord under Landlords, and record any money a landlord has sent.</div>}
           {unassigned !== 0 && <span className="error small">Some client money isn't linked to a landlord. Every penny in the client account must belong to someone: check those entries.</span>}
         </div>
         <form className="card" method="get">
