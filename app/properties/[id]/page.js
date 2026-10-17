@@ -84,7 +84,7 @@ export default async function Property({ params, searchParams }) {
         </div>
       )}
 
-      <div className="card"><h3>Certificates</h3>
+      <div className="card"><div className="row"><h3>Certificates</h3><Link className="btn ghost small" href={'/portal/compliance/' + id}>Compliance record</Link></div>
         {CERTS.map((c) => { const cert = certs.find((x) => x.kind === c.key), st = certStatus(c, cert), doc = certDocs[c.key];
           return (<div key={c.key} className="stack" style={{ gap: 4 }}>
             <div className="row"><span>{c.label}</span><span className={'pill ' + st.cls}>{st.text}</span></div>

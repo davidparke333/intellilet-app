@@ -75,6 +75,7 @@ export default async function Portal({ searchParams }) {
               {r.status === 'assigned' && (() => { const Q = quoteState((lev || []).filter((e) => e.repair_id === r.id), cap); return Q.quote && Q.quote.detail.work ? <span className="muted">Work quoted: {Q.quote.detail.work}</span> : null; })()}
               <span className="muted">Reported {fmt(String(r.reported_at).slice(0, 10))}{D && D.next ? ' · damp and mould legal step: ' + D.next.label.toLowerCase() + ', ' + D.next.st.text.toLowerCase() : ''}</span></div>); })}
           <span className="small">{last ? <>Last inspected {fmt(last.inspected_on)} · <Link href={'/portal/report/' + last.id}>Inspection report</Link></> : 'Not inspected yet'}</span>
+          <Link href={'/portal/compliance/' + p.id} className="btn ghost small">Compliance record (view or print)</Link>
         </div>); })}
       {!(props || []).length && <div className="card"><span className="muted">No properties are linked to your account yet.</span></div>}
       </>}
