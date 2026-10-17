@@ -181,5 +181,7 @@ export async function addContractor(_prev, fd) {
     if (e2) throw new Error(e2.message);
   } catch (e) { return fail(fd, e.message); }
   revalidatePath('/contractors');
+  const back = txt(fd, 'back');
+  if (/^\/repairs\/[0-9a-f-]{36}$/.test(back)) { revalidatePath(back); redirect(back + '?saved=' + encodeURIComponent('Contractor added. You can phone them now')); }
   redirect('/contractors?saved=1');
 }

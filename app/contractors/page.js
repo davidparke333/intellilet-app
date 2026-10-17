@@ -30,9 +30,10 @@ export default async function Contractors({ searchParams }) {
       {!(list || []).length && <div className="card"><span className="muted">No contractors yet. Add your first one below.</span></div>}
 
       {staff && (
-        <details className="card" open={!(list || []).length}>
+        <details className="card" open={!(list || []).length || sp.add === '1'}>
           <summary><b>Add a contractor</b></summary>
           <ActionForm className="stack" action={addContractor}>
+            {sp.back && <input type="hidden" name="back" value={sp.back} />}
             <div className="formsection" style={{ borderTop: 0, paddingTop: 8 }}><h4>Who they are</h4>
               <div className="field"><label htmlFor="cn">Business or person's name</label><input id="cn" name="name" required /></div>
               <div className="grid2">

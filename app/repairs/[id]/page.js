@@ -43,6 +43,14 @@ export default async function Repair({ params, searchParams }) {
     contractors = (cs || []).filter((c) => !c.insurance_expires || daysUntil(c.insurance_expires) >= 0)
       .sort((a, b) => (want.some((t) => b.trades.includes(t)) - want.some((t) => a.trades.includes(t))) || (r.priority === 'emergency' ? (b.availability === '24h') - (a.availability === '24h') : 0));
   }
+  // where each contractor stands for this job: their latest call outcome
+  const lastCall = (cid) => { const c = ev.filter((e) => e.kind === 'call' && e.detail.contractor_id === cid).pop(); return c ? c.detail.outcome : null; };
+  const wantT = TRADE_FOR[r.category] || [];
+  const doesIt = (c) => wantT.some((t) => c.trades.includes(t));
+  const declined = contractors.filter((c) => lastCall(c.id) === 'declined');
+  const toTry = contractors.filter((c) => lastCall(c.id) !== 'declined')
+    .sort((a, b) => (doesIt(b) - doesIt(a)) || ((lastCall(a.id) ? 1 : 0) - (lastCall(b.id) ? 1 : 0)));
+  const lastDeclined = ev.filter((e) => e.kind === 'call').pop();
   const calls = (cid) => ev.filter((e) => e.kind === 'call' && e.detail.contractor_id === cid).map((e) => e.detail.text.split(': ').pop()).join(', ');
 
   return (
@@ -78,18 +86,36 @@ export default async function Repair({ params, searchParams }) {
               </ActionForm>)}
           </>) : (<>
             <Next text={next} sub={`Landlord limit ${money(Math.max(limit, cleared))}${cleared > limit ? ' (quote approved)' : ''}. Book only after the contractor agrees.`} />
-            {!contractors.length && <span className="muted">No approved contractors with in-date insurance yet. <Link href="/contractors">Add one in Trades</Link>.</span>}
-            {contractors.map((c) => (
-              <ActionForm key={c.id} className="stack" action={callContractor.bind(null, id)}>
-                <input type="hidden" name="contractor_id" value={c.id} />
-                <div className="row"><span><b>{c.contacts.full_name}</b><br /><span className="muted small">{c.trades.join(', ')} · {c.availability === '24h' ? '24 hours' : 'office hours'}{c.contacts.phone ? ' · ' : ''}{c.contacts.phone && <a href={'tel:' + c.contacts.phone}>{c.contacts.phone}</a>}{calls(c.id) ? ' · ' + calls(c.id) : ''}</span></span></div>
-                <div className="field"><label htmlFor={'sl' + c.id}>Spend limit for this job (£)</label><input id={'sl' + c.id} name="spend_limit" inputMode="decimal" defaultValue={(Math.max(limit, cleared) / 100).toFixed(0)} /></div>
-                <div style={three}>
-                  <button className="btn" name="outcome" value="agreed">They agreed: book</button>
-                  <button className="btn ghost small" name="outcome" value="noanswer">No answer</button>
-                  <button className="btn ghost small" name="outcome" value="declined">Can't do it</button>
-                </div>
-              </ActionForm>))}
+            {lastDeclined && lastDeclined.detail.outcome === 'declined' && <div className="note">{lastDeclined.detail.text.replace('Phoned ', '').replace(": can't do it", ' can\'t do it.')} {toTry.length ? 'Try ' + toTry[0].contacts.full_name + ' next.' : 'Nobody else is on your list for this yet.'}</div>}
+            {!toTry.length && (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="muted">{contractors.length ? 'Everyone on your list has said they can\'t do it.' : 'No approved contractors with in-date insurance yet.'}</span>
+                <Link href={'/contractors?add=1&back=' + encodeURIComponent('/repairs/' + id)} className="btn">Add another contractor</Link>
+              </div>)}
+            {toTry.map((c, n) => {
+              const firstOther = !doesIt(c) && (n === 0 || doesIt(toTry[n - 1]));
+              return (<div key={c.id} className="stack" style={{ gap: 8 }}>
+                {firstOther && <span className="muted small" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>{wantT.length ? 'These contractors don\'t list ' + wantT.join(' or ').toLowerCase() + ', but might help:' : 'Other contractors:'}</span>}
+                <ActionForm className="stack" action={callContractor.bind(null, id)}>
+                  <input type="hidden" name="contractor_id" value={c.id} />
+                  <div className="row"><span>{n === 0 && <><span className="pill info" style={{ marginBottom: 4, display: 'inline-block' }}>Phone next</span><br /></>}<b>{c.contacts.full_name}</b><br /><span className="muted small">{c.trades.join(', ')} · {c.availability === '24h' ? '24 hours' : 'office hours'}{c.contacts.phone ? ' · ' : ''}{c.contacts.phone && <a href={'tel:' + c.contacts.phone}>{c.contacts.phone}</a>}{calls(c.id) ? ' · ' + calls(c.id) : ''}</span></span></div>
+                  <div className="field"><label htmlFor={'sl' + c.id}>Spend limit for this job (£)</label><input id={'sl' + c.id} name="spend_limit" inputMode="decimal" defaultValue={(Math.max(limit, cleared) / 100).toFixed(0)} /></div>
+                  <div style={three}>
+                    <button className="btn" name="outcome" value="agreed">They agreed: book</button>
+                    <button className="btn ghost small" name="outcome" value="noanswer">No answer</button>
+                    <button className="btn ghost small" name="outcome" value="declined">Can't do it</button>
+                  </div>
+                </ActionForm></div>);
+            })}
+            {toTry.length > 0 && <Link href={'/contractors?add=1&back=' + encodeURIComponent('/repairs/' + id)} className="small">Use someone not on your list? Add them in Trades</Link>}
+            {declined.length > 0 && <details className="more"><summary>Couldn't do it ({declined.length})</summary>
+              {declined.map((c) => (
+                <ActionForm key={c.id} className="row" action={callContractor.bind(null, id)}>
+                  <input type="hidden" name="contractor_id" value={c.id} /><input type="hidden" name="spend_limit" value={(Math.max(limit, cleared) / 100).toFixed(0)} />
+                  <span className="small">{c.contacts.full_name}{c.contacts.phone ? ' · ' : ''}{c.contacts.phone && <a href={'tel:' + c.contacts.phone}>{c.contacts.phone}</a>}</span>
+                  <button className="btn ghost small" name="outcome" value="agreed">Now agreed: book</button>
+                </ActionForm>))}
+            </details>}
           </>)}
         </div>
       )}
