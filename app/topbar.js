@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 export default function TopBar({ sub, here }) {
-  const tabs = [['/', 'Homes'], ['/repairs', 'Repairs'], ['/contractors', 'Trades']];
+  const tabs = [['/', 'Homes'], ['/repairs', 'Repairs'], ['/checks', 'Checks'], ['/contractors', 'Trades']];
   return (
     <>
       <div className="topbar">

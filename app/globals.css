@@ -159,3 +159,9 @@ input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height:
   .sheet { border: 0; padding: 0; border-radius: 0; }
   .sheet .grid2 { grid-template-columns: 1fr 1fr; }
 }
+.tri .tribtn { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
+.tri .tribtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tri .tribtn:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tri .tribtn.p.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tri .tribtn.f.on { background: var(--bad-ink); color: var(--surface); border-color: var(--bad-ink); }
+.tri .tribtn.n.on { background: var(--muted); color: var(--surface); border-color: var(--muted); }

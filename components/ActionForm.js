@@ -11,6 +11,7 @@ export default function ActionForm({ action, className, children }) {
     for (const el of form.elements) {
       if (!el.name || el.type === 'file' || el.type === 'hidden' || el.type === 'submit') continue;
       if (el.type === 'checkbox') el.checked = el.name in state.values;
+      else if (el.type === 'radio') el.checked = state.values[el.name] === el.value;
       else if (el.name in state.values) el.value = state.values[el.name];
     }
     const msg = form.querySelector('[role=alert]');

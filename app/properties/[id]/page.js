@@ -2,10 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { loadProperty, docLink } from '@/lib/property';
-import { CERTS, certStatus, depositStatus, prescribedInfo, onboardingChecklist, fmt, money } from '@/lib/rules';
+import { CERTS, certStatus, depositStatus, prescribedInfo, onboardingChecklist, fmt, money, inspectionDue, findingState, checkLabel, INSPECT_MONTHS } from '@/lib/rules';
+import ActionForm from '@/components/ActionForm';
+import { raiseFromFinding, linkFinding, closeFinding } from '@/app/checks/actions';
 import { markLive } from './actions';
 
-const SAVED = { details: 'Property and landlord saved', tenancy: 'Tenancy saved', deposit: 'Deposit saved', certificate: 'Certificate recorded', live: 'Onboarding finished. This property is now live' };
+const SAVED = { details: 'Property and landlord saved', tenancy: 'Tenancy saved', deposit: 'Deposit saved', certificate: 'Certificate recorded', live: 'Onboarding finished. This property is now live', inspection_pass: 'Inspection saved: everything passed', inspection_repairs: 'Inspection saved. A repair was raised (or linked) for each action', inspection_actions: 'Inspection saved. The actions are listed below, still open', finding_linked: 'Finding linked to the repair', finding_closed: 'Finding closed, the reason is on record' };
 
 export default async function Property({ params, searchParams }) {
   const { id } = await params; const sp = await searchParams;
@@ -21,6 +23,15 @@ export default async function Property({ params, searchParams }) {
   const piDoc = tenancy ? await docLink(sb, tenancy.pi_document_id) : null;
   const { count: openRepairs } = await sb.from('repairs').select('id', { count: 'exact', head: true }).eq('property_id', id).in('status', ['reported', 'assigned', 'invoiced']);
   const live = p.onboarding_status === 'live';
+  const [{ data: insps }, { data: finds }, { data: openR }, { data: setting }] = await Promise.all([
+    sb.from('inspections').select('id, inspected_on').eq('property_id', id).order('inspected_on', { ascending: false }).limit(5),
+    sb.from('inspection_findings').select('*, inspections(inspected_on), repairs(id, status, verified_at, tenant_confirmed, category)').eq('property_id', id),
+    sb.from('repairs').select('id, category, description, reported_at').eq('property_id', id).in('status', ['reported', 'assigned', 'invoiced']).order('reported_at', { ascending: false }),
+    sb.from('agency_settings').select('inspection_months').maybeSingle()
+  ]);
+  const lastI = (insps || [])[0], iDue = inspectionDue(lastI && lastI.inspected_on, (setting && setting.inspection_months) || INSPECT_MONTHS);
+  const findings = (finds || []).map((f) => ({ ...f, st: findingState(f) })).sort((a, b) => (b.st.open - a.st.open) || String(b.inspections.inspected_on).localeCompare(a.inspections.inspected_on));
+  const openFindings = findings.filter((f) => f.st.open);
 
   return (
     <>
@@ -80,6 +91,31 @@ export default async function Property({ params, searchParams }) {
               {doc ? <> · <a href={doc.url} target="_blank" rel="noopener">View certificate</a></> : cert ? ' · no copy uploaded' : ''}
               {staff && <> · <Link href={`/properties/${id}/certificate/${c.key}`}>{cert ? 'Record new' : 'Record'}</Link></>}</span>
           </div>); })}
+      </div>
+
+      <div className="card">
+        <div className="row"><h3>Inspections</h3><span className={'pill ' + iDue.cls}>{iDue.text}</span></div>
+        <span className="muted small">{lastI ? <>Last inspected {fmt(lastI.inspected_on)} · <Link href={'/checks/report/' + lastI.id}>Report for the landlord</Link></> : 'No inspection on record yet.'}
+          {(insps || []).length > 1 && <> · earlier: {insps.slice(1).map((x, n) => <span key={x.id}>{n ? ', ' : ''}<Link href={'/checks/report/' + x.id}>{fmt(x.inspected_on)}</Link></span>)}</>}</span>
+        {staff && <Link className={'btn small ' + (iDue.cls === 'ok' ? 'ghost' : '')} href={'/checks/inspect/' + id}>Start inspection</Link>}
+        {findings.length > 0 && <div className="row"><b className="small">Findings</b><span className={'pill ' + (openFindings.length ? 'bad' : 'ok')}>{openFindings.length ? openFindings.length + ' open' : 'All resolved'}</span></div>}
+        {findings.length > 0 && <span className="muted small">Each problem found stays open until its repair is done and checked, or it is closed with a reason.</span>}
+        {findings.filter((f) => f.st.open || sp.allf).map((f) => (
+          <div key={f.id} className="stack" style={{ gap: 6, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+            <div className="row"><span><b>{f.check_code} · {checkLabel(f.check_code)}</b><br /><span className="muted small">Found {fmt(f.inspections.inspected_on)}{f.note ? ' · ' + f.note : ''}</span></span><span className={'pill ' + f.st.cls}>{f.st.open ? 'Open' : 'Done'}</span></div>
+            <span className="small">{f.st.text}{f.repairs && f.repairs.status !== 'cancelled' ? <> · <Link href={'/repairs/' + f.repairs.id}>Open the repair</Link></> : ''}</span>
+            {staff && f.st.open && f.st.noRepair && (<>
+              <form action={raiseFromFinding.bind(null, f.id)}><button className="btn small" style={{ width: '100%' }}>Raise a repair</button></form>
+              {(openR || []).length > 0 && <ActionForm className="row" action={linkFinding.bind(null, f.id)}>
+                <select name="repair_id" aria-label="Link to an open repair" defaultValue=""><option value="">Or link to an open repair…</option>{openR.map((r) => <option key={r.id} value={r.id}>{r.category} · {fmt(r.reported_at.slice(0, 10))} · {r.description.slice(0, 40)}</option>)}</select>
+                <button className="btn ghost small">Link</button></ActionForm>}
+            </>)}
+            {staff && f.st.open && <details className="more"><summary>Close without a repair</summary>
+              <ActionForm className="stack" action={closeFinding.bind(null, f.id)}>
+                <div className="field"><label htmlFor={'cr' + f.id}>Reason (kept on record)</label><input id={'cr' + f.id} name="reason" placeholder="e.g. Landlord fixed it himself, photos on file" /></div>
+                <button className="btn ghost small">Close this finding</button></ActionForm></details>}
+          </div>))}
+        {findings.length > openFindings.length && <Link className="small" href={sp.allf ? `/properties/${id}` : `/properties/${id}?allf=1`}>{sp.allf ? 'Hide resolved findings' : 'Show resolved findings (' + (findings.length - openFindings.length) + ')'}</Link>}
       </div>
 
       <div className="card"><div className="row"><h3>Repairs</h3><span className={'pill ' + (openRepairs ? 'due' : 'ok')}>{openRepairs || 0} open</span></div>
