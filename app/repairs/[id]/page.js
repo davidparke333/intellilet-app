@@ -4,6 +4,7 @@ import { currentMember, isStaff } from '@/lib/supabase/server';
 import ActionForm from '@/components/ActionForm';
 import FileField from '@/components/FileField';
 import CostFields from '@/components/CostFields';
+import DampCard from './DampCard';
 import { PRIORITY, statusLabel, FIX_CHECKS, TRADE_FOR, GO_AHEAD_REASONS, daysOpen, pastTarget, repairNext, money, fmt, daysUntil } from '@/lib/rules';
 import { callContractor, quoteDecision, workDone, approveInvoice, queryInvoice, markPaid, verifyFixed, addNote } from '../actions';
 
@@ -62,12 +63,14 @@ export default async function Repair({ params, searchParams }) {
 
       <div className="card">
         <div className="problem"><span className="muted small">Problem reported{r.source ? ' · ' + r.source.toLowerCase() : ''} · {when(r.reported_at)}</span><span>{r.description}</span></div>
-        <span className="small"><span className={'pill ' + (pastTarget(r) ? 'bad' : r.priority === 'routine' ? 'info' : 'due')}>{pr.label} · {pr.days}-day target{pastTarget(r) ? ' · past target' : ''}</span>{r.is_damp ? ' · Damp & mould log' : ''} · {daysOpen(r.reported_at)} days open</span>
+        <span className="small">{r.is_damp ? <span className={'pill ' + (pastTarget(r) ? 'bad' : 'due')}>Damp and mould · legal deadlines{pastTarget(r) ? ' · overdue' : ''}</span> : <span className={'pill ' + (pastTarget(r) ? 'bad' : r.priority === 'routine' ? 'info' : 'due')}>{pr.label} · {pr.days}-day target{pastTarget(r) ? ' · past target' : ''}</span>} · {daysOpen(r.reported_at)} days open</span>
         <span className="small">{r.access_with_key ? 'OK to use our key if the tenant is out' : 'Tenant must be in'}{r.best_times ? ' · best times: ' + r.best_times : ''}{r.properties.keys_location ? ' · keys: ' + r.properties.keys_location : ''}</span>
         {lead && <span className="small">Tenant: {lead.contacts.full_name}{lead.contacts.phone ? ' · ' + lead.contacts.phone : ''}</span>}
         {r.contractors && <span className="small">Contractor: {r.contractors.contacts.full_name}{r.contractors.contacts.phone ? ' · ' + r.contractors.contacts.phone : ''}{r.contractors.vat_registered ? ' · VAT registered' : ''}{r.spend_limit_pence ? ' · spend limit ' + money(r.spend_limit_pence) : ''}</span>}
         {photos.length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{photos.map((ph) => ph.url && <a key={ph.id} href={ph.url} target="_blank" rel="noopener" title={ph.label}>{/\.(pdf)$/i.test(ph.storage_path) ? ph.file_name : <img src={ph.url} alt={ph.label} style={{ width: 96, height: 72, objectFit: 'cover', borderRadius: 8 }} />}</a>)}</div>}
       </div>
+
+      <DampCard r={r} ev={ev} staff={staff} agencyId={member.agency_id} />
 
       {staff && r.status === 'reported' && (
         <div className="card">

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import ActionForm from '@/components/ActionForm';
 import FileField from '@/components/FileField';
-import { CATS, PRIORITY, SOURCES } from '@/lib/rules';
+import { CATS, PRIORITY, SOURCES, todayISO } from '@/lib/rules';
 import { logRepair } from '../actions';
 
 const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
@@ -23,8 +23,10 @@ export default async function NewRepair({ searchParams }) {
         <div className="field"><label htmlFor="ds">What is the problem?</label><textarea id="ds" name="description" rows={3} required placeholder="e.g. No hot water since Monday, boiler shows fault F28" /></div>
         <div style={two}><div className="field"><label htmlFor="so">Reported by</label><select id="so" name="source">{SOURCES.map((s) => <option key={s}>{s}</option>)}</select></div>
           <div className="field"><label htmlFor="bt">Best times for access</label><input id="bt" name="best_times" placeholder="e.g. after 3pm" /></div></div>
-        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 500 }}><span>OK to use our key if the tenant is out</span><input type="checkbox" name="access_with_key" style={{ width: 24, height: 24 }} /></label>
-        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 500 }}><span>Damp or mould (logs it and makes it urgent)</span><input type="checkbox" name="is_damp" style={{ width: 24, height: 24 }} /></label>
+        <label className="check"><input type="checkbox" name="access_with_key" />OK to use our key if the tenant is out</label>
+        <label className="check"><input type="checkbox" name="is_damp" />Damp or mould (follows the Awaab's Law steps and deadlines)</label>
+        <div className="field"><label htmlFor="aw">Date first reported to us</label><input id="aw" name="aware_on" type="date" defaultValue={todayISO()} max={todayISO()} />
+          <span className="hint">Change this if the tenant told you on an earlier day. For damp and mould, the legal deadlines run from this date.</span></div>
         {[1, 2, 3].map((n) => <FileField key={n} label={'Photo of the fault ' + n + ' (optional)'} agencyId={member.agency_id} propertyId={sp.p || 'repairs'} prefix={'photo' + n} />)}
         <button className="btn">Log repair</button>
       </ActionForm>

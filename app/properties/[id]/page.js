@@ -7,7 +7,7 @@ import ActionForm from '@/components/ActionForm';
 import { raiseFromFinding, linkFinding, closeFinding } from '@/app/checks/actions';
 import { markLive } from './actions';
 
-const SAVED = { details: 'Property and landlord saved', tenancy: 'Tenancy saved', deposit: 'Deposit saved', certificate: 'Certificate recorded', live: 'Onboarding finished. This property is now live', inspection_pass: 'Inspection saved: everything passed', inspection_repairs: 'Inspection saved. A repair was raised (or linked) for each action', inspection_actions: 'Inspection saved. The actions are listed below, still open', finding_linked: 'Finding linked to the repair', finding_closed: 'Finding closed, the reason is on record' };
+const SAVED = { details: 'Property and landlord saved', tenancy: 'Tenancy saved', deposit: 'Deposit saved', certificate: 'Certificate recorded', live: 'Onboarding finished. This property is now live', inspection_pass: 'Inspection saved: everything passed', inspection_repairs: 'Inspection saved. A repair was raised (or linked) for each action', inspection_actions: 'Inspection saved. The actions are listed below, still open', inspection_damp: 'Inspection saved. Damp and mould always gets a repair (the legal deadlines have started). Other actions are listed below', finding_linked: 'Finding linked to the repair', finding_closed: 'Finding closed, the reason is on record' };
 
 export default async function Property({ params, searchParams }) {
   const { id } = await params; const sp = await searchParams;

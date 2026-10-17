@@ -25,7 +25,8 @@ export default function InspectionChecks({ checks, repairFor, openRepairs, agenc
             {v === 'action' && (<>
               <div className="field"><label htmlFor={'n_' + code}>What needs doing?</label><input id={'n_' + code} name={'n_' + code} placeholder="e.g. mould on bathroom ceiling, extractor not working" /></div>
               <FileField label="Photo (optional)" agencyId={agencyId} propertyId={propertyId} prefix={'p_' + code} />
-              {raise && dup && (
+              {code === 'J' && <span className="note small">Damp and mould always gets a repair: from today the legal deadlines apply (investigate within 10 working days).</span>}
+              {(raise || code === 'J') && dup && (
                 <div className="field"><label htmlFor={'l_' + code}>A {dup.category.toLowerCase()} repair is already open here</label>
                   <select id={'l_' + code} name={'link_' + code} defaultValue="link"><option value="link">Add this to that repair: {dup.description.slice(0, 50)}</option><option value="new">Raise a separate repair</option></select></div>)}
             </>)}

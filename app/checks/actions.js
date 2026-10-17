@@ -21,7 +21,8 @@ async function newRepair(sb, agency_id, property_id, code, note, inspected_on) {
   const [category, priority] = CHECK_REPAIR[code];
   const { data: t } = await sb.from('tenancies').select('id').eq('property_id', property_id).in('status', ['active', 'pending']).maybeSingle();
   const description = 'Inspection ' + code + ' (' + checkLabel(code) + '): ' + note;
-  const { data: r, error } = await sb.from('repairs').insert({ agency_id, property_id, tenancy_id: t ? t.id : null, category, priority, is_damp: code === 'J', source: 'Inspection', description }).select('id').single();
+  const { data: r, error } = await sb.from('repairs').insert({ agency_id, property_id, tenancy_id: t ? t.id : null, category, priority, is_damp: code === 'J', source: 'Inspection', description, ...(code === 'J' ? { dm_aware_on: inspected_on } : {}) }).select('id').single();
+  if (error && /dm_/.test(error.message)) throw new Error('The database needs update 008 first (see the instructions from Claude)');
   if (error) throw new Error(error.message);
   await sb.from('repair_events').insert({ agency_id, repair_id: r.id, kind: 'status', detail: { text: 'Raised from the inspection on ' + fmt(inspected_on) + ': ' + note } });
   return r.id;
@@ -51,7 +52,7 @@ export async function saveInspection(property_id, _prev, fd) {
     for (const code of actions) {
       const note = txt(fd, 'n_' + code);
       let repair_id = null;
-      if (raise) {
+      if (raise || code === 'J') { // damp and mould: we are now aware, so the legal clock has started
         const dup = (open || []).find((r) => r.category === CHECK_REPAIR[code][0]);
         if (dup && fd.get('link_' + code) !== 'new') {
           repair_id = dup.id;
@@ -64,7 +65,7 @@ export async function saveInspection(property_id, _prev, fd) {
       else await addDoc(sb, agency_id, fd, 'p_' + code, 'inspection_findings', f.id, 'inspection photo ' + code);
     }
   } catch (e) { return fail(fd, e.message); }
-  back(property_id, actions.length ? (raise ? 'inspection_repairs' : 'inspection_actions') : 'inspection_pass');
+  back(property_id, actions.length ? (raise ? 'inspection_repairs' : actions.includes('J') ? 'inspection_damp' : 'inspection_actions') : 'inspection_pass');
 }
 
 // ---- deal with a finding later, from the property page ----
