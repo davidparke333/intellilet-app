@@ -46,11 +46,18 @@ export default async function Portal({ searchParams }) {
     // what the landlord is told about a booked job's quote (staff handle approval by phone or email)
     const quoteNote = (r) => { if (r.status !== 'assigned') return null; const Q = quoteState((lev || []).filter((e) => e.repair_id === r.id), cap);
       return Q.stage === 'landlord' ? ['due', 'Quote ' + money(Q.amount) + ': we\'ll contact you for approval'] : Q.stage === 'staff' ? ['info', 'Quote ' + money(Q.amount) + ' received'] : Q.stage === 'approved' ? ['info', 'Approved ' + money(Q.amount) + ': work going ahead'] : Q.stage === 'declined' ? ['due', 'Quote declined: finding another option'] : null; };
+    const { data: linv } = await sb.from('invoices').select('repair_id, work_done, total_pence, status, created_at').in('repair_id', ids((reps || []).map((r) => r.id)));
+    const tab = ['history', 'money'].includes(sp.t) ? sp.t : 'home';
+    const finished = (reps || []).filter((r) => plain(r)[1] === 'Fixed' || r.status === 'cancelled');
     const addr = Object.fromEntries((props || []).map((p) => [p.id, p.address_line1]));
     return (<>
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
       <div className="pagehead"><h1>Your properties</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
       {saved}
+      <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {[['home', 'Properties'], ['history', 'Repair history' + (finished.length ? ' (' + finished.length + ')' : '')], ['money', 'Money']].map(([k, l]) => <Link key={k} href={k === 'home' ? '/portal' : '/portal?t=' + k} className={'btn small ' + (tab === k ? '' : 'ghost')}>{l}</Link>)}
+      </nav>
+      {tab === 'home' && <>
       {(props || []).map((p) => {
         const st = CERTS.map((c) => ({ c, s: certStatus(c, (certs || []).find((x) => x.property_id === p.id && x.kind === c.key)) }));
         const legalOk = st.filter((x) => x.c.basis === 'law').every((x) => x.s.ok);
@@ -70,7 +77,20 @@ export default async function Portal({ searchParams }) {
           <span className="small">{last ? <>Last inspected {fmt(last.inspected_on)} · <Link href={'/portal/report/' + last.id}>Inspection report</Link></> : 'Not inspected yet'}</span>
         </div>); })}
       {!(props || []).length && <div className="card"><span className="muted">No properties are linked to your account yet.</span></div>}
-      {ll && <div className="card">
+      </>}
+      {tab === 'history' && <div className="card"><h3>Repair history</h3>
+        <span className="muted small">Every finished repair at your properties, newest first.</span>
+        {!finished.length && <span className="muted">No finished repairs yet.</span>}
+        {finished.map((r) => { const inv = (linv || []).filter((i) => i.repair_id === r.id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+          const fixedOn = r.verified_at || r.completed_at; return (
+          <div key={r.id} className="stack small" style={{ gap: 2, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+            <div className="row"><b>{r.category} · {addr[r.property_id]}</b><span>{inv && inv.total_pence ? money(inv.total_pence) : r.status === 'cancelled' ? 'No work needed' : 'No charge'}</span></div>
+            <span>{r.description}</span>
+            {inv && inv.work_done && <span><b>Work done:</b> {inv.work_done}</span>}
+            <span className="muted">Reported {fmt(String(r.reported_at).slice(0, 10))}{fixedOn ? ' · ' + (r.status === 'cancelled' ? 'closed ' : 'fixed ') + fmt(String(fixedOn).slice(0, 10)) : ''}{r.is_damp ? ' · damp and mould case' : ''}{inv && inv.status === 'paid' ? ' · paid from your account' : ''}</span>
+          </div>); })}
+      </div>}
+      {tab === 'money' && ll && <div className="card">
         <div className="row"><h3>Money</h3><b>{money(bal ? bal.balance_pence : 0)} held for you</b></div>
         <span className="muted small">Held in our client account: rent received, less our fee and any repairs.</span>
         <Link href={'/portal/statement/' + ll.id} className="btn ghost small">Monthly statements</Link></div>}
