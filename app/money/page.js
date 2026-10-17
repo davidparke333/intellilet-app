@@ -96,6 +96,15 @@ export default async function Money({ searchParams }) {
             ? <div className="note">Matches: {money(bank)}. The client account is reconciled for {fmt(todayISO())}.</div>
             : <div className="error">Difference of {money(Math.abs(bank - client))}: the bank has {bank > client ? 'more' : 'less'} than the records. Look for a payment not yet recorded{bank < client ? ', or one recorded that hasn\'t arrived' : ''}.</div>)}
         </form>
+        <form className="card" method="get" action="/money/export">
+          <h3>Download for your accounts</h3>
+          <span className="muted small">A spreadsheet (CSV) of every money movement in a month. Opens in Excel or Numbers, and imports into Xero, QuickBooks, FreeAgent or Tide. Your income is the Office lines (fees). Client lines are landlords' money, not your income.</span>
+          <div className="grid2">
+            <div className="field"><label htmlFor="em">Month</label><input id="em" name="m" type="month" defaultValue={todayISO().slice(0, 7)} max={todayISO().slice(0, 7)} /></div>
+            <div className="field"><label htmlFor="ea">Which</label><select id="ea" name="account"><option value="">Everything</option><option value="office">Office only (your fee income)</option><option value="client">Client account only</option></select></div>
+          </div>
+          <button className="btn ghost">Download</button>
+        </form>
         <div className="card"><div className="row"><span>Office account (fees earned)</span><b>{money(office)}</b></div>
           <span className="muted small">Fees move here from client money once each month's rent is paid in full. Transfer them to your office bank account.</span></div>
       </>)}
