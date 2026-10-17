@@ -2,7 +2,7 @@ import Link from 'next/link';
 import TopBar from '../topbar';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { quoteState, CERTS, certStatus, depositStatus, prescribedInfo, inspectionDue, dampStages, pastTarget, statusLabel, daysUntil, money, fmt, todayISO, INSPECT_MONTHS, PRIORITY, daysOpen } from '@/lib/rules';
-import { ensureCharges, rentAccount } from '@/lib/money';
+import { ensureCharges, rentAccount, arrearsSince, planProgress } from '@/lib/money';
 import { redirect } from 'next/navigation';
 
 // Today: everything that needs a person, most urgent first. Each item links to where it gets done.
@@ -21,9 +21,10 @@ export default async function Today() {
   ]);
   const T = tens || [];
   await ensureCharges(sb, member.agency_id, T.filter((t) => t.start_date <= todayISO()));
-  const [{ data: charges }, { data: led }] = await Promise.all([sb.from('rent_charges').select('*'), sb.from('ledger_entries').select('tenancy_id, rent_charge_id, category, memo, amount_pence, account')]);
+  const [{ data: charges }, { data: led }] = await Promise.all([sb.from('rent_charges').select('*'), sb.from('ledger_entries').select('tenancy_id, rent_charge_id, category, memo, amount_pence, account, entry_date')]);
 
   const { data: qev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', (reps || []).filter((r) => r.status === 'assigned').map((r) => r.id).concat('00000000-0000-0000-0000-000000000000')).in('kind', ['quote', 'quote_decision']).order('at');
+  const { data: plansAll } = await sb.from('arrears_plans').select('*').eq('status', 'agreed');
   const items = []; // level: 0 = now (legal or overdue), 1 = this week, 2 = coming up
   const add = (level, area, text, sub, href) => items.push({ level, area, text, sub, href });
 
@@ -43,7 +44,11 @@ export default async function Today() {
   }
   for (const t of T) {
     const A = rentAccount((charges || []).filter((c) => c.tenancy_id === t.id), (led || []).filter((e) => e.tenancy_id === t.id));
-    if (A.arrears > 0) add(A.daysLate >= 7 ? 0 : 1, 'Rent', 'Chase ' + money(A.arrears) + ' rent: ' + t.properties.address_line1, A.daysLate + ' days late', '/money/rent/' + t.id);
+    const tc = (charges || []).filter((c) => c.tenancy_id === t.id), te = (led || []).filter((e) => e.tenancy_id === t.id);
+    const since = A.arrears > 0 ? arrearsSince(tc, te) : null, plan = (plansAll || []).filter((x) => x.tenancy_id === t.id).pop(), prog = planProgress(plan, tc, te);
+    if (since && since.threeMonths) add(0, 'Rent', 'Arrears three months in a row: ' + t.properties.address_line1, money(A.arrears) + ' since ' + fmt(since.since) + '. Speak to the landlord; check the pre-action steps', '/money/rent/' + t.id);
+    else if (prog && !prog.onTrack) add(0, 'Rent', 'Payment plan behind: ' + t.properties.address_line1, 'Behind by ' + money(prog.behind) + '. Contact the tenant and record it', '/money/rent/' + t.id);
+    else if (A.arrears > 0) add(A.daysLate >= 7 ? 0 : 1, 'Rent', 'Chase ' + money(A.arrears) + ' rent: ' + t.properties.address_line1, A.daysLate + ' days late' + (plan ? ' · payment plan on track' : ''), '/money/rent/' + t.id);
     const ds = depositStatus(t); if (ds && !ds.lodged) add(ds.cls === 'bad' ? 0 : 1, 'Deposits', 'Lodge the deposit: ' + t.properties.address_line1, ds.text, '/properties/' + t.property_id + '/deposit');
     const pi = prescribedInfo(t); if (pi && !pi.given) add(pi.cls === 'bad' ? 0 : 1, 'Deposits', 'Give the prescribed information: ' + t.properties.address_line1, pi.text, '/properties/' + t.property_id + '/deposit');
   }
