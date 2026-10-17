@@ -86,10 +86,10 @@ export default async function Repair({ params, searchParams }) {
               </ActionForm>)}
           </>) : (<>
             <Next text={next} sub={`Landlord limit ${money(Math.max(limit, cleared))}${cleared > limit ? ' (quote approved)' : ''}. Book only after the contractor agrees.`} />
-            {lastDeclined && lastDeclined.detail.outcome === 'declined' && <div className="note">{lastDeclined.detail.text.replace('Phoned ', '').replace(": can't do it", ' can\'t do it.')} {toTry.length ? 'Try ' + toTry[0].contacts.full_name + ' next.' : 'Nobody else is on your list for this yet.'}</div>}
+            {lastDeclined && lastDeclined.detail.outcome === 'declined' && <div className="note">{lastDeclined.detail.text.replace('Phoned ', '').replace(": can't do it", ' can\'t do it.')} {toTry.length ? 'Try ' + toTry[0].contacts.full_name + ' next.' : 'Nobody else on your list can do it yet. Add another contractor below.'}</div>}
             {!toTry.length && (
               <div className="stack" style={{ gap: 6 }}>
-                <span className="muted">{contractors.length ? 'Everyone on your list has said they can\'t do it.' : 'No approved contractors with in-date insurance yet.'}</span>
+                {!(lastDeclined && lastDeclined.detail.outcome === 'declined') && <span className="muted">{contractors.length ? 'Everyone on your list has said they can\'t do it.' : 'No approved contractors with in-date insurance yet.'}</span>}
                 <Link href={'/contractors?add=1&back=' + encodeURIComponent('/repairs/' + id)} className="btn">Add another contractor</Link>
               </div>)}
             {toTry.map((c, n) => {
