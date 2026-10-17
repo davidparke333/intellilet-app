@@ -1,16 +1,22 @@
 import Link from 'next/link';
 import ActionForm from '@/components/ActionForm';
 import FileField from '@/components/FileField';
+import EmailButton from '@/components/EmailButton';
+import { dampSummaryText, dampDelayText, dampPeople } from '@/lib/dampLetters';
 import { dampStages, DAMP_CAUSES, DAMP_SEVERITY, DAMP_SUMMARY_METHODS, DAMP_RULES, todayISO, fmt } from '@/lib/rules';
 import { recordInvestigation, dampSummarySent, dampWorkStarted, dampDelay, dampCloseNoWork } from '../actions';
 
 // Awaab's Law (Scotland): the three legal steps for any damp or mould report, with their deadlines,
 // and the form for whichever step is next.
-export default function DampCard({ r, ev, staff, agencyId }) {
+export default function DampCard({ r, ev, staff, agencyId, agency, contact }) {
   const delays = ev.filter((e) => e.kind === 'dm_delay').map((e) => e.detail);
   const D = dampStages(r, delays);
   if (!D) return null;
   const nx = D.next, t = todayISO(), closed = r.status === 'cancelled';
+  const who = dampPeople(r);
+  const summaryMail = r.dm_investigated_on ? dampSummaryText({ r, D, agency, contact, ...who }) : null;
+  const lastDelay = delays[delays.length - 1];
+  const delayMail = lastDelay && lastDelay.reason ? dampDelayText({ delay: lastDelay, D, agency, contact, ...who }) : null;
   return (
     <div className="card" style={{ borderColor: D.overdue ? 'var(--bad-ink)' : undefined }}>
       <div className="row"><div className="stack" style={{ gap: 2 }}><h3>Damp and mould: legal steps</h3>
@@ -60,10 +66,11 @@ export default function DampCard({ r, ev, staff, agencyId }) {
       {staff && !closed && nx && nx.key === 'summary' && (
         <ActionForm className="stack" action={dampSummarySent.bind(null, r.id)}>
           <b className="small" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>Send the written summary, by {fmt(nx.due)}</b>
-          <span className="muted small">Print or save the summary above, give it to the tenant, then record it here.</span>
+          <span className="muted small">Email it, or print it and hand or post it, then record it here.</span>
+          <EmailButton to={who.tenantEmails} cc={who.landlordEmails} subject={summaryMail.subject} body={summaryMail.body} label="Email the summary" ccLabel="Also send a copy to the landlord (not needed once landlords can log in)" />
           <div className="grid2">
             <div className="field"><label htmlFor="so">Date sent</label><input id="so" name="sent_on" type="date" defaultValue={t} max={t} /></div>
-            <div className="field"><label htmlFor="sm">How</label><select id="sm" name="method" defaultValue=""><option value="" disabled>Choose</option>{DAMP_SUMMARY_METHODS.map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div className="field"><label htmlFor="sm">How</label><select id="sm" name="method" defaultValue={who.tenantEmails.length ? "Email" : ""}><option value="" disabled>Choose</option>{DAMP_SUMMARY_METHODS.map((x) => <option key={x}>{x}</option>)}</select></div>
           </div>
           <FileField label="Copy of what was sent (optional)" agencyId={agencyId} propertyId={r.property_id} prefix="sumcopy" />
           <button className="btn">Summary sent</button>
@@ -101,7 +108,10 @@ export default function DampCard({ r, ev, staff, agencyId }) {
             <span className="muted small">After saving, print the notice from the link that appears under the steps.</span>
           </ActionForm>
         </details>)}
-      {delays.length > 0 && <Link href={`/repairs/${r.id}/damp-summary?delay=1`} className="small">Print the latest delay notice</Link>}
+      {delayMail && staff && !closed && (<div className="stack" style={{ gap: 8, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+        <b className="small">Latest delay notice</b>
+        <EmailButton to={who.tenantEmails} cc={who.landlordEmails} subject={delayMail.subject} body={delayMail.body} label="Email the delay notice" ccLabel="Also send a copy to the landlord" />
+        <Link href={`/repairs/${r.id}/damp-summary?delay=1`} className="small">Or print the delay notice</Link></div>)}
     </div>
   );
 }

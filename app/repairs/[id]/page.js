@@ -15,9 +15,9 @@ const Next = ({ text, sub }) => <div className="nextbox"><span className="small"
 
 export default async function Repair({ params, searchParams }) {
   const { id } = await params; const sp = await searchParams;
-  const { sb, member } = await currentMember();
+  const { sb, user, member } = await currentMember();
   const staff = isStaff(member);
-  const { data: r } = await sb.from('repairs').select('*, properties(id, address_line1, postcode, keys_location, property_owners(landlords(approval_limit_pence, contacts(full_name, phone, email)))), tenancies(tenancy_people(is_lead, contacts(full_name, phone))), contractors(*, contacts(full_name, phone, email))').eq('id', id).maybeSingle();
+  const { data: r } = await sb.from('repairs').select('*, properties(id, address_line1, address_line2, town, postcode, keys_location, property_owners(landlords(approval_limit_pence, contacts(full_name, phone, email)))), tenancies(tenancy_people(is_lead, contacts(full_name, phone, email))), contractors(*, contacts(full_name, phone, email))').eq('id', id).maybeSingle();
   if (!r) notFound();
   const [{ data: events }, { data: docs }, { data: invoices }] = await Promise.all([
     sb.from('repair_events').select('*').eq('repair_id', id).order('at'),
@@ -70,7 +70,7 @@ export default async function Repair({ params, searchParams }) {
         {photos.length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{photos.map((ph) => ph.url && <a key={ph.id} href={ph.url} target="_blank" rel="noopener" title={ph.label}>{/\.(pdf)$/i.test(ph.storage_path) ? ph.file_name : <img src={ph.url} alt={ph.label} style={{ width: 96, height: 72, objectFit: 'cover', borderRadius: 8 }} />}</a>)}</div>}
       </div>
 
-      <DampCard r={r} ev={ev} staff={staff} agencyId={member.agency_id} />
+      <DampCard r={r} ev={ev} staff={staff} agencyId={member.agency_id} agency={(member.agencies && (member.agencies.trading_name || member.agencies.name)) || 'Your letting agent'} contact={user.email} />
 
       {staff && r.status === 'reported' && (
         <div className="card">
