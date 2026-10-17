@@ -12,7 +12,7 @@ const pence = (fd, k) => { const v = txt(fd, k).replace(/[£,\s]/g, ''); if (v =
 export async function tenantReport(_prev, fd) {
   const { sb, member } = await currentMember();
   if (!member || member.role !== 'tenant') redirect('/portal');
-  const { data: t } = await sb.from('tenancies').select('id, property_id, agency_id').limit(1).maybeSingle();
+  const { data: t } = await sb.from('tenancies').select('id, property_id, agency_id').in('id', ((await sb.from('tenancy_people').select('tenancy_id').eq('contact_id', member.contact_id)).data || []).map((x) => x.tenancy_id).concat('00000000-0000-0000-0000-000000000000')).in('status', ['active', 'pending']).limit(1).maybeSingle();
   if (!t) return fail(fd, 'We could not find your tenancy. Please contact us');
   const category = CATS.includes(txt(fd, 'category')) ? txt(fd, 'category') : 'Something else';
   const description = txt(fd, 'description');

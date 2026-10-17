@@ -1,7 +1,7 @@
 import TopBar from '../topbar';
 import { redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
-import { grantAccess, revokeAccess } from './actions';
+import { grantAccess, revokeAccess, previewAs } from './actions';
 
 // Who can sign in to the portals. Logins are created by inviting the person from Supabase; this links that login to their record.
 export default async function Access({ searchParams }) {
@@ -36,8 +36,9 @@ export default async function Access({ searchParams }) {
       <div key={role} className="card"><h3>{title}</h3>
         {!people.length && <span className="muted small">None yet.</span>}
         {people.map((p) => { const on = has(p.id, role); return (
-          <div key={p.id + role} className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+          <div key={p.id + role} className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 8, flexWrap: 'wrap' }}>
             <span className="small"><b>{p.full_name}</b>{p.where ? ' · ' + p.where : ''}<br /><span className="muted">{p.email || 'No email recorded'}</span></span>
+            <form action={previewAs.bind(null, p.id, role)}><button className="btn ghost small" title="See their portal exactly as they will">Preview</button></form>
             {on ? <form action={revokeAccess.bind(null, p.id, role)}><span className="pill ok" style={{ marginRight: 8 }}>Has access</span><button className="btn ghost small">Remove</button></form>
               : <form action={grantAccess.bind(null, p.id, role)}><button className="btn small" disabled={!p.email}>Give access</button></form>}
           </div>); })}

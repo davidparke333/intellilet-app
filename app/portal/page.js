@@ -5,13 +5,17 @@ import ActionForm from '@/components/ActionForm';
 import CostFields from '@/components/CostFields';
 import { CERTS, certStatus, dampStages, inspectionDue, fmt, money, PRIORITY } from '@/lib/rules';
 import { contractorDone } from './actions';
+import { exitPreview } from '../access/actions';
+const NONE = ['00000000-0000-0000-0000-000000000000'];
+const ids = (a) => (a && a.length ? a : NONE);
 
 // What a landlord or tenant is told about a repair, in plain words
 const plain = (r) => r.status === 'reported' ? ['due', 'Reported · arranging a contractor'] : r.status === 'assigned' ? ['info', 'Contractor booked'] : r.status === 'invoiced' && !r.verified_at ? ['info', 'Work done · being checked'] : r.status === 'cancelled' ? ['info', 'Closed'] : ['ok', 'Fixed'];
-const Head = ({ name, agency, role }) => (
+const Head = ({ name, agency, role, preview }) => (<>
+  {preview && <form action={exitPreview} className="note" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><span className="small"><b>Preview:</b> this is exactly what {name || 'they'} will see.</span><button className="btn small">Back to staff view</button></form>}
   <div className="topbar"><div className="brand"><div className="logo" aria-hidden="true">iL</div>
     <div><b style={{ fontFamily: 'var(--display)', fontSize: 16 }}>{agency}</b><div className="muted small">{name ? name + ' · ' : ''}{role} portal</div></div></div>
-    <form action="/auth/signout" method="post"><button className="btn ghost small">Sign out</button></form></div>);
+    {!preview && <form action="/auth/signout" method="post"><button className="btn ghost small">Sign out</button></form>}</div></>);
 
 export default async function Portal({ searchParams }) {
   const sp = await searchParams;
@@ -26,17 +30,19 @@ export default async function Portal({ searchParams }) {
 
   // ---------------- landlord ----------------
   if (role === 'landlord') {
-    const [{ data: props }, { data: certs }, { data: reps }, { data: insps }, { data: ll }, { data: bal }, { data: tens }] = await Promise.all([
-      sb.from('properties').select('id, address_line1, postcode, onboarding_status').order('address_line1'),
-      sb.from('current_certificates').select('*'),
-      sb.from('repairs').select('*').order('reported_at', { ascending: false }),
-      sb.from('inspections').select('id, property_id, inspected_on').order('inspected_on', { ascending: false }),
-      sb.from('landlords').select('id').limit(1).maybeSingle(),
-      sb.from('landlord_balances').select('balance_pence').maybeSingle(),
-      sb.from('tenancies').select('property_id, status, rent_pence, start_date')
+    const { data: ll } = await sb.from('landlords').select('id').eq('contact_id', member.contact_id).limit(1).maybeSingle();
+    const { data: own } = await sb.from('property_owners').select('property_id').eq('landlord_id', ll ? ll.id : NONE[0]);
+    const pids = ids((own || []).map((o) => o.property_id));
+    const [{ data: props }, { data: certs }, { data: reps }, { data: insps }, { data: bal }, { data: tens }] = await Promise.all([
+      sb.from('properties').select('id, address_line1, postcode, onboarding_status').in('id', pids).order('address_line1'),
+      sb.from('current_certificates').select('*').in('property_id', pids),
+      sb.from('repairs').select('*').in('property_id', pids).order('reported_at', { ascending: false }),
+      sb.from('inspections').select('id, property_id, inspected_on').in('property_id', pids).order('inspected_on', { ascending: false }),
+      sb.from('landlord_balances').select('balance_pence').eq('landlord_id', ll ? ll.id : NONE[0]).maybeSingle(),
+      sb.from('tenancies').select('property_id, status, rent_pence, start_date').in('property_id', pids)
     ]);
     return (<>
-      <Head name={name} agency={agency} role="Landlord" />
+      <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
       <div className="pagehead"><h1>Your properties</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
       {saved}
       {(props || []).map((p) => {
@@ -66,15 +72,16 @@ export default async function Portal({ searchParams }) {
 
   // ---------------- tenant ----------------
   if (role === 'tenant') {
-    const [{ data: t }, { data: certs }, { data: reps }] = await Promise.all([
-      sb.from('tenancies').select('id, property_id, start_date, rent_pence, rent_due_day, properties(address_line1, address_line2, town, postcode)').limit(1).maybeSingle(),
-      sb.from('current_certificates').select('*'),
-      sb.from('repairs').select('*').order('reported_at', { ascending: false })
+    const { data: tp } = await sb.from('tenancy_people').select('tenancy_id').eq('contact_id', member.contact_id);
+    const { data: t } = await sb.from('tenancies').select('id, property_id, start_date, rent_pence, rent_due_day, properties(address_line1, address_line2, town, postcode)').in('id', ids((tp || []).map((x) => x.tenancy_id))).in('status', ['active', 'pending']).limit(1).maybeSingle();
+    const [{ data: certs }, { data: reps }] = await Promise.all([
+      sb.from('current_certificates').select('*').eq('property_id', t ? t.property_id : NONE[0]),
+      sb.from('repairs').select('*').eq('tenancy_id', t ? t.id : NONE[0]).order('reported_at', { ascending: false })
     ]);
-    const { data: docs } = await sb.from('documents').select('id, storage_path, about_id').eq('about_table', 'certificates');
+    const { data: docs } = await sb.from('documents').select('id, storage_path, about_id').eq('about_table', 'certificates').in('about_id', ids((certs || []).map((c) => c.id)));
     const links = Object.fromEntries(await Promise.all((docs || []).map(async (d) => [d.about_id, (await sb.storage.from('documents').createSignedUrl(d.storage_path, 3600)).data?.signedUrl])));
     return (<>
-      <Head name={name} agency={agency} role="Tenant" />
+      <Head name={name} agency={agency} role="Tenant" preview={member.preview} />
       <div className="pagehead"><h1>Your home</h1><span className="sub">{t ? [t.properties.address_line1, t.properties.town, t.properties.postcode].filter(Boolean).join(', ') : ''}</span></div>
       {saved}
       <Link href="/portal/new-repair" className="btn">Report a repair</Link>
@@ -97,16 +104,17 @@ export default async function Portal({ searchParams }) {
   }
 
   // ---------------- contractor ----------------
-  const [{ data: me2 }, { data: jobs }, { data: invs }] = await Promise.all([
-    sb.from('contractors').select('id, vat_registered').limit(1).maybeSingle(),
-    sb.from('repairs').select('*, properties(address_line1, address_line2, town, postcode, keys_location)').order('reported_at', { ascending: false }),
-    sb.from('invoices').select('repair_id, status, total_pence, created_at')
+  const { data: me2 } = await sb.from('contractors').select('id, vat_registered').eq('contact_id', member.contact_id).limit(1).maybeSingle();
+  const cid = me2 ? me2.id : NONE[0];
+  const [{ data: jobs }, { data: invs }] = await Promise.all([
+    sb.from('repairs').select('*, properties(address_line1, address_line2, town, postcode, keys_location)').eq('contractor_id', cid).order('reported_at', { ascending: false }),
+    sb.from('invoices').select('repair_id, status, total_pence, created_at').eq('contractor_id', cid)
   ]);
   const live = (jobs || []).filter((j) => j.status === 'assigned'), past = (jobs || []).filter((j) => j.status !== 'assigned');
   const contacts = Object.fromEntries(await Promise.all(live.map(async (j) => [j.id, ((await sb.rpc('contractor_job_contact', { p_repair: j.id })).data || [])])));
   const invLabel = { submitted: 'Invoice sent, waiting for approval', queried: 'Invoice queried, we will contact you', approved: 'Approved, payment on its way', paid: 'Paid' };
   return (<>
-    <Head name={name} agency={agency} role="Contractor" />
+    <Head name={name} agency={agency} role="Contractor" preview={member.preview} />
     <div className="pagehead"><h1>Your jobs</h1><span className="sub">{live.length} booked with you</span></div>
     {saved}
     {!live.length && <div className="card"><span className="muted">No jobs booked with you right now.</span></div>}

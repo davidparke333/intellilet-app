@@ -9,7 +9,7 @@ import { tenantReport } from '../actions';
 export default async function NewRepair() {
   const { sb, member } = await currentMember();
   if (!member || member.role !== 'tenant') redirect('/portal');
-  const { data: t } = await sb.from('tenancies').select('property_id').limit(1).maybeSingle();
+  const { data: t } = await sb.from('tenancies').select('property_id').in('id', ((await sb.from('tenancy_people').select('tenancy_id').eq('contact_id', member.contact_id)).data || []).map((x) => x.tenancy_id).concat('00000000-0000-0000-0000-000000000000')).in('status', ['active', 'pending']).limit(1).maybeSingle();
   return (<>
     <Link href="/portal" className="btn ghost small" style={{ alignSelf: 'flex-start' }}>‹ Back</Link>
     <div className="pagehead"><h1>Report a repair</h1><span className="sub">If anyone is in danger, or there's a gas smell, leave the property and call 999 or the gas emergency line (0800 111 999) first.</span></div>
