@@ -70,6 +70,7 @@ export default async function Property({ params, searchParams }) {
         {tenancy ? (<>
           <span>{tenants.map((t) => t.contacts && t.contacts.full_name).filter(Boolean).join(' & ') || 'Tenant not recorded'}</span>
           <span className="muted small">{tenancy.status === 'pending' ? 'Starts' : 'Started'} {fmt(tenancy.start_date)} · {money(tenancy.rent_pence)} a month, due on day {tenancy.rent_due_day}{tenancy.taken_over ? ' · taken over from a previous agent' : ''}</span>
+          <Link className="small" href={'/money/rent/' + tenancy.id}>Rent account and payments</Link>
         </>) : <span className="muted">Vacant. Add a tenancy when a tenant moves in.</span>}
       </div>
 
