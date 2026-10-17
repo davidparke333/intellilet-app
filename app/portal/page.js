@@ -80,26 +80,40 @@ export default async function Portal({ searchParams }) {
     ]);
     const { data: docs } = await sb.from('documents').select('id, storage_path, about_id').eq('about_table', 'certificates').in('about_id', ids((certs || []).map((c) => c.id)));
     const links = Object.fromEntries(await Promise.all((docs || []).map(async (d) => [d.about_id, (await sb.storage.from('documents').createSignedUrl(d.storage_path, 3600)).data?.signedUrl])));
+    const tab = ['past', 'certs'].includes(sp.t) ? sp.t : 'home';
+    const done = (r) => ['ok'].includes(plain(r)[0]) || r.status === 'cancelled';
+    const current = (reps || []).filter((r) => !done(r)), past = (reps || []).filter(done);
+    const repairRow = (r) => { const pl = plain(r), D = r.is_damp && r.status !== 'cancelled' ? dampStages(r) : null; return (
+      <div key={r.id} className="stack small" style={{ gap: 2, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+        <div className="row"><span><b>{r.category}</b> · reported {fmt(String(r.reported_at).slice(0, 10))}</span><span className={'pill ' + pl[0]}>{pl[1]}</span></div>
+        <span className="muted">{r.description}</span>
+        {D && !done(r) && <span className="muted">Damp and mould: {D.stages.map((s) => s.label.split(' (')[0] + ' ' + (s.doneOn ? 'done ' + fmt(s.doneOn) : s.applies ? (s.due ? 'by ' + fmt(s.due) : 'next') : 'not needed')).join(' · ')}</span>}
+      </div>); };
     return (<>
       <Head name={name} agency={agency} role="Tenant" preview={member.preview} />
       <div className="pagehead"><h1>Your home</h1><span className="sub">{t ? [t.properties.address_line1, t.properties.town, t.properties.postcode].filter(Boolean).join(', ') : ''}</span></div>
       {saved}
-      <Link href="/portal/new-repair" className="btn">Report a repair</Link>
-      <div className="card"><h3>Your repairs</h3>
-        {!(reps || []).length && <span className="muted">Nothing reported.</span>}
-        {(reps || []).map((r) => { const pl = plain(r), D = r.is_damp && r.status !== 'cancelled' ? dampStages(r) : null; return (
-          <div key={r.id} className="stack small" style={{ gap: 2, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-            <div className="row"><span><b>{r.category}</b> · reported {fmt(String(r.reported_at).slice(0, 10))}</span><span className={'pill ' + pl[0]}>{pl[1]}</span></div>
-            <span className="muted">{r.description}</span>
-            {D && <span className="muted">Damp and mould: {D.stages.map((s) => s.label.split(' (')[0] + ' ' + (s.doneOn ? 'done ' + fmt(s.doneOn) : s.applies ? (s.due ? 'by ' + fmt(s.due) : 'next') : 'not needed')).join(' · ')}</span>}
-          </div>); })}
-      </div>
-      <div className="card"><h3>Safety certificates</h3>
+      <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {[['home', 'Home'], ['past', 'Past repairs' + (past.length ? ' (' + past.length + ')' : '')], ['certs', 'Certificates']].map(([k, l]) => <Link key={k} href={k === 'home' ? '/portal' : '/portal?t=' + k} className={'btn small ' + (tab === k ? '' : 'ghost')}>{l}</Link>)}
+      </nav>
+      {tab === 'home' && (<>
+        <Link href="/portal/new-repair" className="btn">Report a repair</Link>
+        <div className="card"><h3>Repairs in progress</h3>
+          {!current.length && <span className="muted">Nothing in progress. If something needs fixing, press Report a repair.</span>}
+          {current.map(repairRow)}
+        </div>
+        {t && <div className="card"><span className="small">Rent {money(t.rent_pence)} a month, due on day {t.rent_due_day}.</span></div>}
+      </>)}
+      {tab === 'past' && <div className="card"><h3>Past repairs</h3>
+        {!past.length && <span className="muted">No finished repairs yet.</span>}
+        {past.map(repairRow)}
+      </div>}
+      {tab === 'certs' && <div className="card"><h3>Safety certificates</h3>
+        {!(certs || []).length && <span className="muted">No certificates recorded yet.</span>}
         {CERTS.map((c) => { const cert = (certs || []).find((x) => x.kind === c.key); if (!cert) return null; return (
           <div key={c.key} className="row small"><span>{c.label}<br /><span className="muted">Checked {fmt(cert.checked_on)}{cert.expires_on ? ' · next due ' + fmt(cert.expires_on) : ''}</span></span>
             {links[cert.id] ? <a href={links[cert.id]} target="_blank" rel="noopener">View</a> : <span className="muted">Copy with the agency</span>}</div>); })}
-      </div>
-      {t && <div className="card"><span className="small">Rent {money(t.rent_pence)} a month, due on day {t.rent_due_day}.</span></div>}
+      </div>}
     </>);
   }
 
