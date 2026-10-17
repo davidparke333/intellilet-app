@@ -1,11 +1,25 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 
 export default function Login() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [error, setError] = useState(''); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false);
   const sb = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  // Arriving from an invitation email: the sign-in comes in the link, then they choose a password
+  useEffect(() => {
+    const h = new URLSearchParams(window.location.hash.slice(1)), q = new URLSearchParams(window.location.search);
+    if (h.get('access_token') && h.get('refresh_token')) {
+      setNote('Signing you in…');
+      sb.auth.setSession({ access_token: h.get('access_token'), refresh_token: h.get('refresh_token') }).then(({ error }) => {
+        if (error) setError('This link has expired. Use "Forgotten password" below to get a new one.'); else window.location.href = '/reset?welcome=1';
+      });
+    } else if (q.get('token_hash')) {
+      sb.auth.verifyOtp({ token_hash: q.get('token_hash'), type: q.get('type') || 'invite' }).then(({ error }) => {
+        if (error) setError('This link has expired. Use "Forgotten password" below to get a new one.'); else window.location.href = '/reset?welcome=1';
+      });
+    } else if (h.get('error_description')) setError(h.get('error_description').replace(/\+/g, ' ') + '. Use "Forgotten password" below to get a new link.');
+  }, []);
   async function signIn(e) {
     e.preventDefault(); setBusy(true); setError(''); setNote('');
     const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });

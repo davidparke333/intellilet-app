@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { currentMember } from '@/lib/supabase/server';
+import { currentMember, isStaff } from '@/lib/supabase/server';
 import PrintButton from '@/components/PrintButton';
 import { CHECKS, fmt, findingState } from '@/lib/rules';
 
@@ -18,7 +18,7 @@ export default async function Report({ params }) {
   const actions = CHECKS.filter(([c]) => res[c] === 'action' || byCode[c]).length;
   return (
     <>
-      <div className="row noprint"><Link href={'/properties/' + p.id} className="btn ghost small">‹ Back to property</Link><PrintButton label="Print report" /></div>
+      <div className="row noprint"><Link href={isStaff(member) ? '/properties/' + p.id : '/portal'} className="btn ghost small">‹ Back</Link><PrintButton label="Print report" /></div>
       <div className="sheet">
         <div className="row" style={{ alignItems: 'flex-start' }}>
           <div className="stack" style={{ gap: 2 }}><h1>Property inspection</h1><span>{ag.trading_name || ag.name}</span></div>

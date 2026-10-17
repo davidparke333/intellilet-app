@@ -1,0 +1,49 @@
+'use server';
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+import { currentMember } from '@/lib/supabase/server';
+import { CATS, URGENCY, todayISO } from '@/lib/rules';
+
+const txt = (fd, k) => String(fd.get(k) || '').trim();
+const fail = (fd, msg) => ({ error: String(msg).replace(/\.$/, ''), values: Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string')) });
+const pence = (fd, k) => { const v = txt(fd, k).replace(/[£,\s]/g, ''); if (v === '') return 0; const n = Math.round(parseFloat(v) * 100); return Number.isFinite(n) && n >= 0 ? n : null; };
+
+// A tenant reports a repair from their portal
+export async function tenantReport(_prev, fd) {
+  const { sb, member } = await currentMember();
+  if (!member || member.role !== 'tenant') redirect('/portal');
+  const { data: t } = await sb.from('tenancies').select('id, property_id, agency_id').limit(1).maybeSingle();
+  if (!t) return fail(fd, 'We could not find your tenancy. Please contact us');
+  const category = CATS.includes(txt(fd, 'category')) ? txt(fd, 'category') : 'Something else';
+  const description = txt(fd, 'description');
+  if (description.length < 5) return fail(fd, 'Tell us what the problem is');
+  let priority = URGENCY.some(([k]) => k === txt(fd, 'priority')) ? txt(fd, 'priority') : 'routine';
+  const is_damp = category === 'Damp & mould' || fd.get('is_damp') === 'on';
+  if (is_damp && priority === 'routine') priority = 'urgent';
+  let id;
+  try {
+    const { data, error } = await sb.from('repairs').insert({ agency_id: t.agency_id, property_id: t.property_id, tenancy_id: t.id, category, description, priority, is_damp, source: 'Tenant app',
+      access_with_key: fd.get('access_with_key') === 'on', best_times: txt(fd, 'best_times') || null, ...(is_damp ? { dm_aware_on: todayISO() } : {}) }).select('id').single();
+    if (error) throw new Error(error.message);
+    id = data.id;
+    await sb.from('repair_events').insert({ agency_id: t.agency_id, repair_id: id, kind: 'status', detail: { text: 'Reported by the tenant in the app: ' + description } });
+    for (const n of [1, 2, 3]) {
+      const path = txt(fd, 'photo' + n + '_path'); if (!path) continue;
+      if (!path.startsWith(t.agency_id + '/' + t.property_id + '/')) throw new Error('Photo upload problem, please try again');
+      const { error: de } = await sb.from('documents').insert({ agency_id: t.agency_id, storage_path: path, file_name: txt(fd, 'photo' + n + '_name') || null, mime_type: txt(fd, 'photo' + n + '_mime') || null, size_bytes: Number(txt(fd, 'photo' + n + '_size')) || null, about_table: 'repairs', about_id: id, label: 'photo from tenant' });
+      if (de) throw new Error(de.message);
+    }
+  } catch (e) { return fail(fd, e.message); }
+  revalidatePath('/portal'); redirect('/portal?saved=' + encodeURIComponent('Thank you. Your repair has been reported and we will be in touch.' + (priority === 'emergency' ? ' For an emergency, please also phone us now.' : '')));
+}
+
+// A contractor marks their job done and sends the invoice
+export async function contractorDone(repairId, _prev, fd) {
+  const { sb, member } = await currentMember();
+  if (!member || member.role !== 'contractor') redirect('/portal');
+  const labour = pence(fd, 'labour'), parts = pence(fd, 'parts'), vat = pence(fd, 'vat');
+  if ([labour, parts, vat].some((x) => x === null)) return fail(fd, 'Amounts must be numbers, like 120.50');
+  const { error } = await sb.rpc('contractor_complete', { p_repair: repairId, p_work: txt(fd, 'work_done'), p_labour: labour, p_parts: parts, p_vat: vat, p_ref: txt(fd, 'reference') });
+  if (error) return fail(fd, error.message);
+  revalidatePath('/portal'); redirect('/portal?saved=' + encodeURIComponent('Thank you. The job is marked done and your invoice has been sent for approval.'));
+}

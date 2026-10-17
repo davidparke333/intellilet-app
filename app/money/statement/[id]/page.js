@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { currentMember } from '@/lib/supabase/server';
+import { currentMember, isStaff } from '@/lib/supabase/server';
 import PrintButton from '@/components/PrintButton';
 import { money, fmt, todayISO } from '@/lib/rules';
 import { monthOf, addMonth, monthName } from '@/lib/money';
@@ -23,10 +23,10 @@ export default async function Statement({ params, searchParams }) {
   const ag = member.agencies || {};
   return (
     <>
-      <div className="row noprint"><Link href="/money?t=landlords" className="btn ghost small">‹ Landlords</Link><PrintButton label="Print statement" /></div>
+      <div className="row noprint"><Link href={isStaff(member) ? '/money?t=landlords' : '/portal'} className="btn ghost small">‹ Back</Link><PrintButton label="Print statement" /></div>
       <div className="row noprint" style={{ justifyContent: 'center' }}>
-        <Link className="btn ghost small" href={`/money/statement/${id}?m=${addMonth(m, -1).slice(0, 7)}`}>‹ {monthName(addMonth(m, -1))}</Link>
-        {next <= monthOf(todayISO()) && <Link className="btn ghost small" href={`/money/statement/${id}?m=${next.slice(0, 7)}`}>{monthName(next)} ›</Link>}
+        <Link className="btn ghost small" href={`${isStaff(member) ? '/money' : '/portal'}/statement/${id}?m=${addMonth(m, -1).slice(0, 7)}`}>‹ {monthName(addMonth(m, -1))}</Link>
+        {next <= monthOf(todayISO()) && <Link className="btn ghost small" href={`${isStaff(member) ? '/money' : '/portal'}/statement/${id}?m=${next.slice(0, 7)}`}>{monthName(next)} ›</Link>}
       </div>
       <div className="sheet">
         <div className="row" style={{ alignItems: 'flex-start' }}>
