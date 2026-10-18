@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import styles from './Today.module.css';
 import TopBar from '../topbar';
 import PortfolioScope from '@/components/PortfolioScope';
 import { portfolioContext, portfolioScope, EMPTY_PORTFOLIO_ID } from '@/lib/portfolio';
@@ -79,51 +80,45 @@ export default async function Today({ searchParams }) {
   for (const c of cons || []) { const d = daysUntil(c.insurance_expires); if (c.insurance_expires && d <= 30) add(d < 0 ? 1 : 2, 'Trades', 'Insurance ' + (d < 0 ? 'expired' : 'ends soon') + ': ' + c.contacts.full_name, (d < 0 ? 'Expired ' : 'Ends ') + fmt(c.insurance_expires) + '. Not offered on repairs once expired', '/contractors'); }
   for (const b of bals || []) if (Number(b.balance_pence) < 0) add(0, 'Money', 'Landlord balance below zero', money(b.balance_pence) + '. Client money must never go negative', '/money?t=landlords');
 
-  const groups = [[0, 'Do now', 'Legal deadlines and overdue'], [1, 'This week', 'Keep things moving'], [2, 'Coming up', 'Plan ahead']];
+  const queuedHrefs = new Set([...invoicesToApprove, ...awaitingLandlord].map((job) => job.href));
+  const groups = [[0, 'Do now', 'Legal deadlines and overdue', 'do-now'], [1, 'This week', 'Keep things moving', 'this-week'], [2, 'Coming up', 'Plan ahead', 'coming-up']].map(([level, title, subtitle, id]) => ({ level, title, subtitle, id, tasks: items.filter((i) => i.level === level && !queuedHrefs.has(i.href)) }));
   const now = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
+  const overview = [
+    ['do-now', 'Do now', groups[0].tasks.length, 'Urgent and overdue work', 'urgent'],
+    ['this-week', 'This week', groups[1].tasks.length, 'Tasks to keep things moving', 'normal'],
+    ['invoices-to-approve', 'Invoices to approve', invoicesToApprove.length, 'Checked and ready for approval', 'decision'],
+    ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord.length, 'Quotes waiting for a decision', 'decision']
+  ];
   return (
-    <>
+    <div className={styles.root}>
       <TopBar here="/today" />
-      <div className="pagehead"><h1>Today</h1><span className="sub">{now} · {items.filter((i) => i.level === 0).length} to do now, {items.filter((i) => i.level === 1).length} this week</span></div>
+      <header className={styles.heading}><div><span className={styles.eyebrow}>YOUR WORKSPACE</span><h1>Today</h1><p>{now} · {scope === 'mine' ? 'Your portfolio' : 'Across your agency'}</p></div><span className={styles.dateNote}>A clear view of what needs you next.</span></header>
       <PortfolioScope base="/today" scope={scope} profile={profile} />
       {portfolioError && <div className="error">Could not load your portfolio settings.</div>}
       {scope === 'mine' && <span className="muted small">Property tasks are for your portfolio. Agency-wide money and contractor alerts are also shown.</span>}
-      <div className="grid2" aria-label="Approvals overview" style={{ alignItems: 'stretch', gridAutoRows: '1fr' }}>
-        {[
-          ['invoices-to-approve', 'Invoices to approve', invoicesToApprove, 'Work checked and ready for your approval'],
-          ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord, 'Quotes waiting for the landlord’s decision']
-        ].map(([id, title, queue, description]) => (
-          <Link key={id} href={'#' + id} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <div className="row"><b>{title}</b><span className={'pill ' + (queue.length ? 'due' : 'ok')}>{queue.length}</span></div>
-            <span className="muted small">{queue.length ? description : 'Nothing waiting'}</span>
-          </Link>
-        ))}
+      <nav className={styles.overview} aria-label="Work overview">
+        {overview.map(([id, title, count, description, tone]) => <Link key={id} href={'#' + id} className={styles.metric} data-tone={tone}><span className={styles.metricLabel}>{title}<span aria-hidden="true">↗</span></span><strong>{count}</strong><span className={styles.metricHint}>{count ? description : 'Nothing waiting'}</span></Link>)}
+      </nav>
+      {!items.length && <div className="note"><b>All caught up.</b> Nothing needs doing right now.</div>}
+      <div className={styles.board}>
+        {groups.map(({ level, title, subtitle, id, tasks }) => <section key={id} id={id} className={styles.column} data-level={level} aria-labelledby={id + '-heading'}>
+          <div className={styles.columnHead}><div><h2 id={id + '-heading'}>{title}</h2><span className="muted small">{subtitle}</span></div><span className={'pill ' + (level === 0 && tasks.length ? 'bad' : level === 1 && tasks.length ? 'due' : 'info')}>{tasks.length}</span></div>
+          <div className={styles.tasks}>
+            {!tasks.length && <div className={styles.empty}><span className={styles.check} aria-hidden="true">✓</span><b>{level === 0 ? 'No urgent tasks' : level === 1 ? 'Nothing else waiting' : 'Nothing coming up'}</b><span className="muted small">{level === 0 ? 'No overdue or urgent items in this view.' : 'New items will appear here when they need attention.'}</span></div>}
+            {tasks.map((item, index) => <Link key={item.href + '-' + index} href={item.href} className={styles.task} data-level={level}><span className={styles.taskArea}>{item.area}<span aria-hidden="true">↗</span></span><b>{item.text}</b><span className={styles.taskHint}>{item.sub}</span></Link>)}
+          </div>
+        </section>)}
       </div>
-      {!items.length && <div className="card"><b>Nothing needs doing.</b><span className="muted">Everything is up to date.</span></div>}
-      {groups.map(([lv, title, sub]) => { const list = items.filter((i) => i.level === lv && !invoicesToApprove.some((job) => job.href === i.href) && !awaitingLandlord.some((job) => job.href === i.href)); if (!list.length) return null;
-        return (<div key={lv} className="stack" style={{ gap: 8 }}>
-          <div className="row"><h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2><span className="muted small">{sub}</span></div>
-          {list.map((i, n) => (
-            <Link key={n} href={i.href} className="card" style={{ textDecoration: 'none', color: 'inherit', gap: 2, borderLeft: '4px solid ' + (lv === 0 ? 'var(--bad-ink)' : lv === 1 ? 'var(--accent)' : 'var(--line)') }}>
-              <span className="muted small" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{i.area}</span>
-              <b>{i.text}</b><span className="small">{i.sub}</span>
-            </Link>))}
-        </div>); })}
-      {[
-        ['invoices-to-approve', 'Invoices to approve', invoicesToApprove],
-        ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord]
-      ].map(([id, title, queue]) => (
-        <section key={id} id={id} className="stack" style={{ gap: 8, scrollMarginTop: 24 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
-          {!queue.length && <p className="muted small">Nothing waiting.</p>}
-          {queue.map((job) => (
-            <Link key={job.href} href={job.href} className="card" style={{ textDecoration: 'none', color: 'inherit', gap: 2 }}>
-              <b>{job.address}</b>
-              <span className="small">{job.amount != null ? money(job.amount) + ' quote · Review and chase permission' : job.category + ' · Review invoice'}</span>
-            </Link>
-          ))}
-        </section>
-      ))}
-    </>
+      <div className={styles.decisions}>
+        {[
+          ['invoices-to-approve', 'Invoices to approve', invoicesToApprove, 'No invoices are waiting for approval.'],
+          ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord, 'No quotes are waiting for permission.']
+        ].map(([id, title, queue, empty]) => <section key={id} id={id} className={styles.decisionPanel} aria-labelledby={id + '-heading'}>
+          <div className={styles.columnHead}><h2 id={id + '-heading'}>{title}</h2><span className={'pill ' + (queue.length ? 'due' : 'ok')}>{queue.length}</span></div>
+          {!queue.length && <p className="muted small">{empty}</p>}
+          {queue.map((job) => <Link key={job.href} href={job.href} className={styles.decisionRow}><span><b>{job.address}</b><span className={styles.taskHint}>{job.amount != null ? money(job.amount) + ' quote · Review and chase permission' : job.category + ' · Review invoice'}</span></span><span aria-hidden="true">↗</span></Link>)}
+        </section>)}
+      </div>
+    </div>
   );
 }
