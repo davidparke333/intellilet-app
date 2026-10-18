@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid, SectionSummary } from '@/components/SectionLayout';
 import Link from 'next/link';
 import { currentMember } from '@/lib/supabase/server';
 import TopBar from '../topbar';
@@ -18,16 +19,18 @@ export default async function Repairs({ searchParams }) {
   const owed = (toPay || []).reduce((t, i) => t + i.total_pence, 0);
   const agencyName = (member && member.agencies && (member.agencies.trading_name || member.agencies.name)) || 'IntelliLet';
   return (
-    <>
+    <SectionLayout>
       <TopBar sub={`${agencyName} · ${member ? member.role : ''}`} here="/repairs" />
       <div className="row"><div className="pagehead"><h1>Repairs</h1><span className="sub">{R.filter((r) => !['paid', 'cancelled'].includes(r.status)).length} in progress</span></div>
         <Link className="btn small" href="/repairs/new">Log a repair</Link></div>
+      <SectionSummary items={[{ label: 'In progress', value: R.filter((r) => !['paid', 'cancelled'].includes(r.status)).length, hint: 'Open repair jobs' }, { label: 'Past target', value: late + dampLate, hint: 'Jobs needing attention', danger: late + dampLate > 0 }, { label: 'Approved invoices', value: money(owed), hint: 'Owed to contractors' }]} />
       {dampLate > 0 && <div className="error" role="alert">{dampLate} damp and mould case{dampLate === 1 ? ' has' : 's have'} a legal deadline overdue (Awaab's Law). Open {dampLate === 1 ? 'it' : 'them'} to see which step.</div>}
       {(late > 0 || owed > 0) && <div className="note">{[late ? late + ' past target time' : '', owed ? money(owed) + ' owed to contractors' : ''].filter(Boolean).join(' · ')}</div>}
       <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {REPAIR_FILTERS.map(([id, label, st]) => <Link key={id} href={'/repairs?f=' + id} className={'btn small ' + (f[0] === id ? '' : 'ghost')}>{label} {R.filter((r) => st.includes(r.status)).length}</Link>)}
       </nav>
       {!list.length && <div className="card"><h3>{f[0] === 'mine' ? 'Nothing for you to do' : 'Nothing here'}</h3><p className="muted">{R.length ? 'No repairs in this group.' : 'Repairs you log appear here.'}</p></div>}
+      <SectionGrid>
       {list.map((r) => { const st = statusLabel(r), pr = PRIORITY[r.priority], late = pastTarget(r), d = daysOpen(r.reported_at), next = repairNext(r);
         return (
           <Link key={r.id} href={'/repairs/' + r.id} className="card proplink">
@@ -37,6 +40,7 @@ export default async function Repairs({ searchParams }) {
             <span className="small">{r.is_damp ? <span className={'pill ' + (late ? 'bad' : 'due')}>Damp and mould{late ? ' · legal deadline overdue' : ' · legal deadlines'}</span> : <span className={'pill ' + (late ? 'bad' : r.priority === 'routine' ? 'info' : 'due')}>{pr.label}{late ? ' · past ' + pr.days + '-day target' : ' · ' + pr.days + '-day target'}</span>} · {d === 0 ? 'today' : d + ' day' + (d === 1 ? '' : 's') + ' ago'}{r.contractors ? ' · ' + r.contractors.contacts.full_name : ''}</span>
             {next && <div className="nextbox"><span className="small" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--accent)' }}>Next step</span><b>{next}</b></div>}
           </Link>); })}
-    </>
+      </SectionGrid>
+    </SectionLayout>
   );
 }

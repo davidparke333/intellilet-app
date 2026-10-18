@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid } from '@/components/SectionLayout';
 import Link from 'next/link';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import TopBar from './topbar';
@@ -31,10 +32,10 @@ export default async function Homes({ searchParams }) {
   const link = (p) => '/?' + new URLSearchParams({ scope, ...(q ? { q } : {}), page: String(p) });
 
   return (
-    <>
+    <SectionLayout>
       <TopBar sub={`${agencyName} · ${member.role}`} here="/" />
       <div className="row"><div className="pagehead"><h1>Homes</h1><span className="sub">{count || 0} propert{count === 1 ? 'y' : 'ies'}</span></div>
-        {isStaff(member) && <Link className="btn small" href="/properties/new">Add</Link>}</div>
+        {isStaff(member) && <Link className="btn small" href="/properties/new">Add property</Link>}</div>
       {isStaff(member) && <PortfolioScope base="/" scope={scope} profile={profile} q={q} />}
       {portfolioError && <div className="error">Could not load your portfolio settings.</div>}
       <form className="row" action="/" method="get">
@@ -47,6 +48,7 @@ export default async function Homes({ searchParams }) {
         <div className="card"><h3>{q ? 'No matches' : scope === 'mine' ? 'No properties allocated yet' : 'No properties yet'}</h3>
           <p className="muted">{q ? 'Try part of the address or the postcode.' : scope === 'mine' ? 'Check All properties for cover, or ask your manager to assign your portfolio.' : 'Tap Add to set up your first property.'}</p></div>
       )}
+      <SectionGrid>
       {(props || []).map((p) => {
         const t = (p.tenancies || []).find((x) => x.status === 'active');
         const lead = t && ((t.tenancy_people || []).find((x) => x.is_lead) || (t.tenancy_people || [])[0]);
@@ -56,10 +58,13 @@ export default async function Homes({ searchParams }) {
             <div className="row"><h3>{p.address_line1}{p.address_line2 ? ', ' + p.address_line2 : ''}</h3>
               <span className={`pill ${p.onboarding_status === 'live' ? 'ok' : 'due'}`}>{p.onboarding_status === 'live' ? 'Live' : 'Setting up'}</span></div>
             <span className="muted small">{[p.town, p.postcode].filter(Boolean).join(' · ')}{p.bedrooms != null ? ` · ${p.bedrooms} bed ${p.property_type.toLowerCase()}` : ''}</span>
-            <span className="small">{owners.length ? 'Landlord: ' + owners.join(', ') : 'No landlord recorded'}{' · '}{t ? 'Tenant: ' + (name(lead && lead.contacts) || 'not recorded') + ` · £${(t.rent_pence / 100).toFixed(2)} a month` : 'Vacant'}</span>
+            <span className="small"><span className="muted">Client</span><br /><b>{owners.length ? owners.join(', ') : 'No client linked'}</b></span>
+            <span className="small"><span className="muted">{t ? 'Tenant' : 'Occupancy'}</span><br />{t ? name(lead && lead.contacts) || 'Not recorded' : 'Vacant'}</span>
+            {t && <span className="small" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 'auto' }}><b>£{(t.rent_pence / 100).toFixed(2)}</b><span className="muted"> / month</span></span>}
           </Link>
         );
       })}
+      </SectionGrid>
       {pages > 1 && (
         <div className="pager">
           {page > 1 ? <Link className="btn ghost small" href={link(page - 1)}>‹ Previous</Link> : <span />}
@@ -67,6 +72,6 @@ export default async function Homes({ searchParams }) {
           {page < pages ? <Link className="btn ghost small" href={link(page + 1)}>Next ›</Link> : <span />}
         </div>
       )}
-    </>
+    </SectionLayout>
   );
 }

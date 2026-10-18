@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid } from '@/components/SectionLayout';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import TopBar from '../topbar';
@@ -18,12 +19,14 @@ export default async function Team({ searchParams }) {
   const { data: landlords, count, error: propertyError } = await query;
   const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
   const pageHref = (p) => '/team?' + new URLSearchParams({ q, page: String(p) });
-  return <><TopBar here="/team" /><div className="pagehead"><h1>Staff portfolios</h1><span className="sub">One manager for each landlord’s whole portfolio. Colleagues can still cover all properties.</span></div>
+  return <SectionLayout><TopBar here="/team" /><div className="pagehead"><h1>Staff portfolios</h1><span className="sub">One manager for each landlord’s whole portfolio. Colleagues can still cover all properties.</span></div>
     {sp.saved && <div className="note" role="status">{sp.saved}</div>}{sp.error && <div className="error" role="alert">{sp.error}</div>}
-    <div className="grid2">{(staff || []).map((s) => <div className="card" key={s.id}><b>{s.full_name}</b><span className="muted small">{byStaff[s.id]} properties · {s.is_demo ? 'Test profile · preview enabled, no separate login' : s.user_id ? 'Linked staff account' : 'Not linked to a login'}</span>{s.is_demo && manage && <form action={previewPortfolio.bind(null, s.id)}><button className="btn ghost small">Preview portfolio</button></form>}</div>)}</div>
+    <SectionGrid>{(staff || []).map((s) => <div className="card" key={s.id}><b>{s.full_name}</b><span className="muted small">{byStaff[s.id]} properties · {s.is_demo ? 'Test profile · preview enabled, no separate login' : s.user_id ? 'Linked staff account' : 'Not linked to a login'}</span>{s.is_demo && manage && <form action={previewPortfolio.bind(null, s.id)}><button className="btn ghost small">Preview portfolio</button></form>}</div>)}</SectionGrid>
     <h2>Allocate landlord portfolios</h2><p className="muted small">All of a landlord’s properties stay together. Joint owners sharing a property move as one group.</p><form className="row" action="/team"><input name="q" defaultValue={q} type="search" aria-label="Search landlords to allocate" placeholder="Search landlord name" /><button className="btn small">Search</button></form>
     {propertyError && <div className="error">Could not load property allocations.</div>}
+    <SectionGrid>
     {(landlords || []).map((l) => <div className="card" key={l.id}><b>{l.contacts?.full_name || 'Landlord'}</b><span className="muted small">{(l.property_owners || []).filter((o) => o.properties && !o.properties.archived_at).length} properties · allocated together</span>{manage ? <form action={assignLandlord} className="stack"><input type="hidden" name="landlord_id" value={l.id} /><label htmlFor={'staff-' + l.id}>Portfolio manager</label><select id={'staff-' + l.id} name="staff_id" defaultValue={l.portfolio_staff_id || ''}><option value="">Unassigned</option>{(staff || []).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}</select><button className="btn small">Assign whole portfolio</button></form> : <span>{(staff || []).find((s) => s.id === l.portfolio_staff_id)?.full_name || 'Unassigned'}</span>}</div>)}
+    </SectionGrid>
     <div className="pager">{page > 1 ? <Link href={pageHref(page - 1)}>Previous</Link> : <span />}<span className="muted small">Page {page} of {pages}</span>{page < pages ? <Link href={pageHref(page + 1)}>Next</Link> : <span />}</div>
-  </>;
+  </SectionLayout>;
 }

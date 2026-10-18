@@ -1,0 +1,37 @@
+:global(.app):has(.root) { max-width: 1200px; }
+.root { display: flex; flex-direction: column; gap: 24px; min-width: 0; padding-block: 8px; }
+.root :global(.pagehead) { gap: 8px; padding-block: 14px 2px; }
+.root :global(.pagehead)::before { content: 'YOUR AGENCY'; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; }
+.root :global(.pagehead h1) { font-size: clamp(28px,3.5vw,38px); }
+.root :global(.pagehead .sub) { max-width: 760px; line-height: 1.6; }
+.root :global(.card) { padding: 22px; border-radius: 18px; gap: 14px; min-width: 0; box-shadow: 0 3px 12px #00000004; }
+.root :global(.card .row) { flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.root :global(.card h3) { overflow-wrap: anywhere; font-size: 17px; }
+.root :global(.card .pill) { white-space: normal; max-width: 100%; }
+.root :global(.card .small) { line-height: 1.6; overflow-wrap: anywhere; }
+.root :global(.card.proplink):hover { border-color: var(--accent); }
+.root > form:global(.row) { padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.root > form:global(.row) input { max-width: 650px; }
+.root > h2 { font-size: 22px; margin: 8px 0 -8px; }
+.root > p { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; align-items: stretch; }
+.wideGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; align-items: start; }
+.grid > span, .wideGrid > span, .grid > p, .wideGrid > p { grid-column: 1 / -1; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 14px; }
+.metric { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.metric > span { font-size: 13px; font-weight: 600; color: var(--muted); }
+.metric strong { font-family: var(--display); font-size: clamp(24px,3vw,32px); overflow-wrap: anywhere; }
+.metric small { color: var(--muted); font-size: 12px; }
+.metric[data-danger='true'] { border-top: 3px solid var(--bad-ink); }
+.metric[data-danger='true'] strong { color: var(--bad-ink); }
+@media (max-width: 1000px) { .grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 650px) {
+  .root { gap: 18px; }
+  .grid, .wideGrid { grid-template-columns: minmax(0,1fr); gap: 12px; }
+  .root :global(.card) { padding: 18px; }
+  .root > :global(.row) { flex-wrap: wrap; }
+  .summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  .metric { padding: 16px; }
+  .root > form:global(.row) { flex-wrap: wrap; padding: 12px; }
+  .root > form:global(.row) input { min-width: 150px; flex: 1; }
+}

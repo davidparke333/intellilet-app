@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid, SectionSummary } from '@/components/SectionLayout';
 import Link from 'next/link';
 import TopBar from '../topbar';
 import { currentMember, isStaff } from '@/lib/supabase/server';
@@ -32,31 +33,34 @@ export default async function Checks({ searchParams }) {
   const counts = { insp: inspRows.filter((r) => r.st.cls !== 'ok' || r.open).length, certs: certRows.filter((r) => r.st.cls !== 'ok').length };
 
   return (
-    <>
+    <SectionLayout>
       <TopBar here="/checks" />
       <div className="pagehead"><h1>Checks</h1><span className="sub">{tab === 'insp' ? 'Inspections every ' + months + ' months, against the Repairing Standard' : 'Safety certificates and reviews for every home'}</span></div>
+      <SectionSummary items={[{ label: 'Homes', value: P.length, hint: 'Properties in this view' }, { label: 'Inspection actions', value: counts.insp, hint: 'Inspections or findings to review', danger: counts.insp > 0 }, { label: 'Certificate actions', value: counts.certs, hint: 'Checks and reviews needing attention', danger: counts.certs > 0 }]} />
       <nav style={{ display: 'flex', gap: 6 }}>
         <Link href="/checks" className={'btn small ' + (tab === 'insp' ? '' : 'ghost')}>Inspections {counts.insp}</Link>
         <Link href="/checks?t=certs" className={'btn small ' + (tab === 'certs' ? '' : 'ghost')}>Certificates {counts.certs}</Link>
       </nav>
 
-      {tab === 'insp' && inspRows.map(({ p, last, st, open: n }) => (
+      {tab === 'insp' && <SectionGrid>{inspRows.map(({ p, last, st, open: n }) => (
         <div key={p.id} className="card">
           <div className="row"><Link href={'/properties/' + p.id} className="proplink"><b>{p.address_line1}</b></Link><span className={'pill ' + st.cls}>{st.text}</span></div>
           <span className="muted small">{last ? <>Last inspected <Link href={'/checks/report/' + last.id}>{fmt(last.inspected_on)}</Link></> : 'No inspection on record'}{n ? ' · ' + n + ' finding' + (n === 1 ? '' : 's') + ' still open' : ''}</span>
           {staff && <Link href={'/checks/inspect/' + p.id} className={'btn small ' + (st.cls === 'ok' ? 'ghost' : '')}>Start inspection</Link>}
-        </div>))}
+        </div>) )}</SectionGrid>}
 
       {tab === 'certs' && (<>
         <Link href={showAll ? '/checks?t=certs' : '/checks?t=certs&all=1'} className="small" style={{ alignSelf: 'flex-start' }}>{showAll ? 'Show only ones needing action' : 'Show all certificates, including in-date ones'}</Link>
         {!certList.length && <div className="card"><span className="muted">Everything is in date.</span></div>}
+        <SectionGrid>
         {certList.map(({ p, c, cert, st }) => (
           <div key={p.id + c.key} className="card" style={{ gap: 6 }}>
             <div className="row"><span><b>{c.label}</b><br /><Link href={'/properties/' + p.id} className="small">{p.address_line1}, {p.postcode}</Link></span><span className={'pill ' + st.cls}>{st.text}</span></div>
             <span className="muted small">{cert ? 'Checked ' + fmt(cert.checked_on) + ' · ' + cert.result : c.rule}{c.basis === 'policy' ? ' · agency policy, not a legal deadline' : ''}</span>
             {staff && <Link href={`/properties/${p.id}/certificate/${c.key}`} className="btn ghost small">{cert ? 'Record new certificate' : 'Record certificate'}</Link>}
           </div>))}
+        </SectionGrid>
       </>)}
-    </>
+    </SectionLayout>
   );
 }

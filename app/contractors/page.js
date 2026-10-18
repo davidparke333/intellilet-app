@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid, SectionSummary } from '@/components/SectionLayout';
 import Topbar from '../topbar';
 import ActionForm from '@/components/ActionForm';
 import { currentMember, isStaff } from '@/lib/supabase/server';
@@ -12,11 +13,13 @@ export default async function Contractors({ searchParams }) {
   const { data: list } = await sb.from('contractors').select('*, contacts(full_name, phone, email)').order('created_at', { ascending: false });
 
   return (
-    <>
+    <SectionLayout>
       <Topbar here="/contractors" />
       <div className="pagehead"><h1>Trades</h1><span className="sub">The contractors you call for repairs. Only approved contractors with in-date insurance are offered on a repair.</span></div>
+      <SectionSummary items={[{ label: 'Trade contacts', value: (list || []).length, hint: 'Your contractor network' }, { label: 'Approved', value: (list || []).filter((c) => c.status === 'approved').length, hint: 'Approved by the agency' }, { label: 'Insurance to review', value: (list || []).filter((c) => !c.insurance_expires || daysUntil(c.insurance_expires) <= 30).length, hint: 'Missing, expired or ending soon' }]} />
       {sp.saved && <div className="note" role="status">Contractor added</div>}
 
+      <SectionGrid>
       {(list || []).map((c) => {
         const d = daysUntil(c.insurance_expires);
         const ins = !c.insurance_expires ? ['due', 'Insurance date not recorded'] : d < 0 ? ['bad', 'Insurance expired ' + fmt(c.insurance_expires)] : d <= 30 ? ['due', 'Insurance ends ' + fmt(c.insurance_expires)] : ['ok', 'Insured to ' + fmt(c.insurance_expires)];
@@ -27,6 +30,7 @@ export default async function Contractors({ searchParams }) {
             <span className="muted small">{[c.contacts.phone, c.contacts.email].filter(Boolean).join(' · ') || 'No contact details'}{c.gas_safe_number ? ' · Gas Safe ' + c.gas_safe_number : ''}{c.niceic_number ? ' · NICEIC ' + c.niceic_number : ''}</span>
           </div>);
       })}
+      </SectionGrid>
       {!(list || []).length && <div className="card"><span className="muted">No contractors yet. Add your first one below.</span></div>}
 
       {staff && (
@@ -68,6 +72,6 @@ export default async function Contractors({ searchParams }) {
           </ActionForm>
         </details>
       )}
-    </>
+    </SectionLayout>
   );
 }

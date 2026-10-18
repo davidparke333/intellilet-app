@@ -1,3 +1,4 @@
+import SectionLayout, { SectionGrid, SectionSummary } from '@/components/SectionLayout';
 import Link from 'next/link';
 import TopBar from '../topbar';
 import ActionForm from '@/components/ActionForm';
@@ -39,24 +40,25 @@ export default async function Money({ searchParams }) {
   const tenantOf = (t) => (t.tenancy_people || []).map((p) => p.contacts && p.contacts.full_name).filter(Boolean).join(' & ') || 'Tenant';
 
   return (
-    <>
+    <SectionLayout>
       <TopBar here="/money" />
       <div className="pagehead"><h1>Money</h1><span className="sub">{monthName(thisMonth)}: {money(inThis)} of {money(dueThis)} rent received{arrears ? ' · ' + money(arrears) + ' in arrears' : ''}</span></div>
+      <SectionSummary items={[{ label: 'Rent scheduled', value: money(dueThis), hint: monthName(thisMonth) }, { label: 'Rent received', value: money(inThis), hint: monthName(thisMonth) }, { label: 'Rent arrears', value: money(arrears), hint: 'Outstanding across tenancies', danger: arrears > 0 }, { label: 'Client funds', value: money(client), hint: 'Recorded client account balance', danger: client < 0 }]} />
       {sp.saved && <div className="note" role="status">{sp.saved}</div>}
       <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[['rent', 'Rent'], ['landlords', 'Landlords'], ['client', 'Client account'], ['office', 'Office account']].map(([k, l]) => <Link key={k} href={k === 'rent' ? '/money' : '/money?t=' + k} className={'btn small ' + (tab === k ? '' : 'ghost')}>{l}</Link>)}
       </nav>
 
-      {tab === 'rent' && (<>
+      {tab === 'rent' && (<SectionGrid>
         {!rows.length && <div className="card"><span className="muted">No tenancies yet. Add one on a property.</span></div>}
         {rows.map(({ t, A }) => { const cur = A.current; return (
           <Link key={t.id} href={'/money/rent/' + t.id} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="row"><b>{t.properties.address_line1}</b><span className={'pill ' + (A.arrears ? (A.daysLate >= 7 ? 'bad' : 'due') : cur ? cur.st.cls : 'info')}>{A.arrears ? money(A.arrears) + ' owed · ' + A.daysLate + ' days' : cur ? cur.st.text : 'Starts ' + fmt(t.start_date)}</span></div>
             <span className="muted small">{tenantOf(t)} · {money(t.rent_pence)} a month, due day {t.rent_due_day}{A.credit ? ' · ' + money(A.credit) + ' in credit' : ''}{t.status === 'ended' ? ' · tenancy ended' : ''}</span>
           </Link>); })}
-      </>)}
+      </SectionGrid>)}
 
-      {tab === 'landlords' && (<>
+      {tab === 'landlords' && (<SectionGrid wide>
         <span className="muted small">Money held in the client account for each landlord: rent in, less fees and repairs paid. Pay it out to the bank details you hold outside this app, then record it here.</span>
         {(lls || []).map((l) => { const b = balOf(l.id); return (
           <div key={l.id} className="card">
@@ -78,9 +80,9 @@ export default async function Money({ searchParams }) {
                 <div className="field"><label htmlFor={'pr' + l.id}>Payment reference</label><input id={'pr' + l.id} name="reference" placeholder="As shown on the bank payment" /></div>
                 <button className="btn">Record payout</button></ActionForm></details>}
           </div>); })}
-      </>)}
+      </SectionGrid>)}
 
-      {tab === 'client' && (<>
+      {tab === 'client' && (<SectionGrid wide>
         <div className="card">
           <h3>Client account</h3>
           <div className="row"><span>Held for landlords</span><b>{money(client - unassigned)}</b></div>
@@ -109,8 +111,8 @@ export default async function Money({ searchParams }) {
           <button className="btn ghost">Download</button>
         </form>
 
-      </>)}
-      {tab === 'office' && (<>
+      </SectionGrid>)}
+      {tab === 'office' && (<SectionGrid wide>
         <div className="card">
           <h3>Office account</h3>
           <span className="muted small">Your own money: management fees, which move here from client money once each month's rent is paid in full. Transfer them to your office bank account.</span>
@@ -127,7 +129,7 @@ export default async function Money({ searchParams }) {
           <div className="field"><label htmlFor="om">Month</label><input id="om" name="m" type="month" defaultValue={todayISO().slice(0, 7)} max={todayISO().slice(0, 7)} /></div>
           <button className="btn ghost">Download</button>
         </form>
-      </>)}
-    </>
+      </SectionGrid>)}
+    </SectionLayout>
   );
 }
