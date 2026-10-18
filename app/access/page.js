@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { previewPortfolio } from '../team/actions';
 import TopBar from '../topbar';
 import { redirect } from 'next/navigation';
 import { currentMember, isStaff } from '@/lib/supabase/server';
@@ -14,6 +16,7 @@ export default async function Access({ searchParams }) {
     sb.from('contractors').select('contact_id, status, contacts(full_name, email)').eq('status', 'approved'),
     sb.from('memberships').select('contact_id, role, active')
   ]);
+  const { data: staffProfiles } = await sb.from('staff_profiles').select('id, full_name, is_demo').eq('agency_id', member.agency_id).eq('active', true).order('full_name');
   const has = (cid, role) => (ms || []).some((m) => m.contact_id === cid && m.role === role && m.active);
   const groups = [
     ['landlord', 'Landlords', (lls || []).map((l) => ({ id: l.contact_id, ...l.contacts }))],
@@ -32,6 +35,9 @@ export default async function Access({ searchParams }) {
       </ol>
       <span className="muted small">They only ever see their own records: a landlord their properties, a tenant their home, a contractor the jobs booked with them.</span>
     </details>
+    <div className="card"><div className="row"><h3>Staff</h3><Link href="/team" className="btn ghost small">Manage portfolios</Link></div>
+      {(staffProfiles || []).map((s) => <div key={s.id} className="row" style={{ flexWrap: 'wrap', borderTop: '1px solid var(--line)', paddingTop: 8 }}><span className="small"><b>{s.full_name}</b><br /><span className="muted">{s.is_demo ? 'Test profile · portfolio preview enabled' : 'Staff portfolio'}</span></span>{s.is_demo && ['owner', 'admin'].includes(member.role) && <form action={previewPortfolio.bind(null, s.id)}><button className="btn ghost small">Preview</button></form>}</div>)}
+    </div>
     {groups.map(([role, title, people]) => (
       <div key={role} className="card"><h3>{title}</h3>
         {!people.length && <span className="muted small">None yet.</span>}

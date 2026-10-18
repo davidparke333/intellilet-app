@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import TopBar from './topbar';
+import PortfolioScope from '@/components/PortfolioScope';
+import { portfolioContext, portfolioScope, EMPTY_PORTFOLIO_ID } from '@/lib/portfolio';
 
 const PAGE = 25;
 const name = (c) => (c && c.full_name) || '';
@@ -14,30 +16,36 @@ export default async function Homes({ searchParams }) {
   if (!member) return (<><TopBar sub={user ? user.email : ''} /><div className="card"><h3>Your account is not linked to an agency yet</h3><p className="muted">Ask the IntelliLet office to add you.</p></div></>);
   const agencyName = (member.agencies && (member.agencies.trading_name || member.agencies.name)) || 'IntelliLet';
 
+  const { profile, error: portfolioError } = await portfolioContext(sb, member, user);
+  const scope = portfolioScope(sp, member, profile);
   let query = sb.from('properties')
     .select('id, address_line1, address_line2, town, postcode, property_type, bedrooms, onboarding_status, property_owners(landlords(contacts(full_name))), tenancies(status, rent_pence, tenancy_people(is_lead, contacts(full_name)))', { count: 'exact' })
-    .is('archived_at', null).order('address_line1').range((page - 1) * PAGE, page * PAGE - 1);
+    .eq('agency_id', member.agency_id).is('archived_at', null).order('address_line1').range((page - 1) * PAGE, page * PAGE - 1);
+  if (scope === 'mine') query = query.eq('portfolio_staff_id', profile?.id || EMPTY_PORTFOLIO_ID);
   if (q) {
     const term = '%' + q.replace(/[%_,()"\\]/g, ' ') + '%';
     query = query.or(`address_line1.ilike.${term},address_line2.ilike.${term},town.ilike.${term},postcode.ilike.${term}`);
   }
   const { data: props, count, error } = await query;
   const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
-  const link = (p) => '/?' + new URLSearchParams({ ...(q ? { q } : {}), page: String(p) });
+  const link = (p) => '/?' + new URLSearchParams({ scope, ...(q ? { q } : {}), page: String(p) });
 
   return (
     <>
       <TopBar sub={`${agencyName} · ${member.role}`} here="/" />
       <div className="row"><div className="pagehead"><h1>Homes</h1><span className="sub">{count || 0} propert{count === 1 ? 'y' : 'ies'}</span></div>
         {isStaff(member) && <Link className="btn small" href="/properties/new">Add</Link>}</div>
+      {isStaff(member) && <PortfolioScope base="/" scope={scope} profile={profile} q={q} />}
+      {portfolioError && <div className="error">Could not load your portfolio settings.</div>}
       <form className="row" action="/" method="get">
+        <input type="hidden" name="scope" value={scope} />
         <input name="q" type="search" defaultValue={q} placeholder="Search address, town or postcode" aria-label="Search properties" />
         <button className="btn ghost small">Search</button>
       </form>
       {error && <div className="error">Could not load properties: {error.message}</div>}
       {!error && !props.length && (
-        <div className="card"><h3>{q ? 'No matches' : 'No properties yet'}</h3>
-          <p className="muted">{q ? 'Try part of the address or the postcode.' : 'Tap Add to set up your first property.'}</p></div>
+        <div className="card"><h3>{q ? 'No matches' : scope === 'mine' ? 'No properties allocated yet' : 'No properties yet'}</h3>
+          <p className="muted">{q ? 'Try part of the address or the postcode.' : scope === 'mine' ? 'Check All properties for cover, or ask your manager to assign your portfolio.' : 'Tap Add to set up your first property.'}</p></div>
       )}
       {(props || []).map((p) => {
         const t = (p.tenancies || []).find((x) => x.status === 'active');

@@ -1,20 +1,32 @@
 import Link from 'next/link';
 import TopBar from '../topbar';
+import PortfolioScope from '@/components/PortfolioScope';
+import { portfolioContext, portfolioScope, EMPTY_PORTFOLIO_ID } from '@/lib/portfolio';
 import { currentMember, isStaff } from '@/lib/supabase/server';
 import { quoteState, CERTS, certStatus, depositStatus, prescribedInfo, inspectionDue, dampStages, pastTarget, statusLabel, daysUntil, money, fmt, todayISO, INSPECT_MONTHS, PRIORITY, daysOpen } from '@/lib/rules';
 import { ensureCharges, rentAccount, arrearsSince, planProgress } from '@/lib/money';
 import { redirect } from 'next/navigation';
 
 // Today: everything that needs a person, most urgent first. Each item links to where it gets done.
-export default async function Today() {
-  const { sb, member } = await currentMember();
+export default async function Today({ searchParams }) {
+  const sp = await searchParams;
+  const { sb, user, member } = await currentMember();
   if (!isStaff(member)) redirect('/portal');
+  const { profile, error: portfolioError } = await portfolioContext(sb, member, user);
+  const scope = portfolioScope(sp, member, profile);
+  let portfolioIds = null;
+  if (scope === 'mine') {
+    const { data, error } = await sb.from('properties').select('id').eq('agency_id', member.agency_id).eq('portfolio_staff_id', profile?.id || EMPTY_PORTFOLIO_ID).is('archived_at', null);
+    if (error) return <><TopBar here="/today" /><div className="error">Could not load your portfolio. Please try again.</div></>;
+    portfolioIds = data?.length ? data.map((p) => p.id) : [EMPTY_PORTFOLIO_ID];
+  }
+  const scoped = (query, column) => portfolioIds ? query.in(column, portfolioIds) : query;
   const [{ data: props }, { data: reps }, { data: tens }, { data: certs }, { data: insps }, { data: cons }, { data: bals }, { data: setting }] = await Promise.all([
-    sb.from('properties').select('id, address_line1, onboarding_status').is('archived_at', null),
-    sb.from('repairs').select('*, properties(address_line1, property_owners(landlords(approval_limit_pence)))').not('status', 'in', '(cancelled)').order('reported_at'),
-    sb.from('tenancies').select('*, properties(address_line1)').in('status', ['active', 'pending']),
-    sb.from('current_certificates').select('*'),
-    sb.from('inspections').select('property_id, inspected_on').order('inspected_on', { ascending: false }),
+    scoped(sb.from('properties').select('id, address_line1, onboarding_status').is('archived_at', null), 'id'),
+    scoped(sb.from('repairs').select('*, properties(address_line1, property_owners(landlords(approval_limit_pence)))').not('status', 'in', '(cancelled)').order('reported_at'), 'property_id'),
+    scoped(sb.from('tenancies').select('*, properties(address_line1)').in('status', ['active', 'pending']), 'property_id'),
+    scoped(sb.from('current_certificates').select('*'), 'property_id'),
+    scoped(sb.from('inspections').select('property_id, inspected_on').order('inspected_on', { ascending: false }), 'property_id'),
     sb.from('contractors').select('id, insurance_expires, status, contacts(full_name)').eq('status', 'approved'),
     sb.from('landlord_balances').select('landlord_id, balance_pence'),
     sb.from('agency_settings').select('inspection_months').maybeSingle()
@@ -73,6 +85,9 @@ export default async function Today() {
     <>
       <TopBar here="/today" />
       <div className="pagehead"><h1>Today</h1><span className="sub">{now} · {items.filter((i) => i.level === 0).length} to do now, {items.filter((i) => i.level === 1).length} this week</span></div>
+      <PortfolioScope base="/today" scope={scope} profile={profile} />
+      {portfolioError && <div className="error">Could not load your portfolio settings.</div>}
+      {scope === 'mine' && <span className="muted small">Property tasks are for your portfolio. Agency-wide money and contractor alerts are also shown.</span>}
       <div className="grid2" aria-label="Approvals overview" style={{ alignItems: 'stretch', gridAutoRows: '1fr' }}>
         {[
           ['invoices-to-approve', 'Invoices to approve', invoicesToApprove, 'Work checked and ready for your approval'],

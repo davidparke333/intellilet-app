@@ -27,6 +27,7 @@ export async function previewAs(contactId, role) {
   const { sb } = await staffOnly();
   const { error } = await sb.rpc('preview_as', { p_contact: contactId, p_role: role });
   if (error) back(/preview_as/.test(error.message) ? 'The database needs update 011 first (see the instructions from Claude)' : error.message, true);
+  (await cookies()).delete('portfolio_preview');
   (await cookies()).set('viewas', role + ':' + contactId, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 4 });
   redirect('/portal');
 }
