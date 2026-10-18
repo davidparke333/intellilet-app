@@ -59,6 +59,8 @@ export default async function Portal({ searchParams }) {
     const q = String(sp.q || '').trim().slice(0, 80);
     const filter = ['attention', 'repairs'].includes(sp.filter) ? sp.filter : 'all';
     const visible = portfolio.filter((p) => (p.address_line1 + ' ' + p.postcode).toLowerCase().includes(q.toLowerCase()) && (filter === 'all' || (filter === 'attention' ? needsCheck(p) || approvals.some((r) => r.property_id === p.id) : activeRepairs.some((r) => r.property_id === p.id))));
+    // Keep legal safety issues visible before the rest of the portfolio.
+    visible.sort((a, b) => Number(needsCheck(b)) - Number(needsCheck(a)) || a.address_line1.localeCompare(b.address_line1, 'en-GB', { numeric: true }) || String(a.postcode || '').localeCompare(String(b.postcode || '')));
     return (<div className="landlord-dashboard">
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
       <div className="pagehead"><span className="portfolio-eyebrow">YOUR PORTFOLIO</span><h1>Your properties, at a glance</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
@@ -72,7 +74,7 @@ export default async function Portal({ searchParams }) {
       </div>
       {(approvals.length > 0 || checkCount > 0) && <section className="portfolio-attention"><div><h2>Needs attention</h2><p>{approvals.length} quote{approvals.length === 1 ? '' : 's'} awaiting your permission · {checkCount} propert{checkCount === 1 ? 'y' : 'ies'} with a legal check to review.</p><span className="small">Your agency will contact you about quote decisions.</span></div><Link href="/portal?filter=attention#portfolio-properties" className="btn small">Review properties</Link></section>}
       <form action="/portal" method="get" className="portfolio-tools" id="portfolio-properties">
-        <div><h2>Your properties</h2><span className="muted small">Showing {visible.length} of {portfolio.length}</span></div>
+        <div><h2>Your properties</h2><span className="muted small">Showing {visible.length} of {portfolio.length} · Safety issues first</span></div>
         <input type="search" name="q" defaultValue={q} placeholder="Search address or postcode" aria-label="Search your properties" />
         <select name="filter" defaultValue={filter} aria-label="Filter properties"><option value="all">All properties</option><option value="attention">Needs attention</option><option value="repairs">Active repairs</option></select><button className="btn small">Find</button>
       </form>
