@@ -1,0 +1,22 @@
+.home {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 18px #0003;
+  font-weight: 600;
+  text-decoration: none;
+}
+.home:hover { filter: brightness(1.1); }
+.home:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+@media print { .home { display: none; } }
