@@ -6,6 +6,11 @@ import CostFields from '@/components/CostFields';
 import { CERTS, certStatus, dampStages, inspectionDue, quoteState, fmt, money, PRIORITY } from '@/lib/rules';
 import { contractorDone, contractorQuote } from './actions';
 import { exitPreview } from '../access/actions';
+const ordinalDay = (value) => {
+  const day = Number(value), lastTwo = day % 100;
+  const suffix = lastTwo >= 11 && lastTwo <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th');
+  return day + suffix;
+};
 const NONE = ['00000000-0000-0000-0000-000000000000'];
 const ids = (a) => (a && a.length ? a : NONE);
 
@@ -156,7 +161,7 @@ export default async function Portal({ searchParams }) {
           {!current.length && <span className="muted">Nothing in progress. If something needs fixing, press Report a repair.</span>}
           {current.map(repairRow)}
         </div>
-        {t && <div className="card"><span className="small">Rent {money(t.rent_pence)} a month, due on day {t.rent_due_day}.</span></div>}
+        {t && <div className="card"><span className="small">Rent {money(t.rent_pence)} a month, due on the {ordinalDay(t.rent_due_day)} of each month.</span></div>}
       </>)}
       {tab === 'past' && <div className="card"><h3>Past repairs</h3>
         {!past.length && <span className="muted">No finished repairs yet.</span>}
