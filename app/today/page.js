@@ -25,6 +25,7 @@ export default async function Today() {
 
   const { data: qev } = await sb.from('repair_events').select('repair_id, kind, detail, at').in('repair_id', (reps || []).filter((r) => r.status === 'assigned').map((r) => r.id).concat('00000000-0000-0000-0000-000000000000')).in('kind', ['quote', 'quote_decision']).order('at');
   const { data: plansAll } = await sb.from('arrears_plans').select('*').eq('status', 'agreed');
+  const invoicesToApprove = [], awaitingLandlord = [];
   const items = []; // level: 0 = now (legal or overdue), 1 = this week, 2 = coming up
   const add = (level, area, text, sub, href) => items.push({ level, area, text, sub, href });
 
@@ -35,11 +36,14 @@ export default async function Today() {
     else if (r.status === 'assigned' && (() => { const own = r.properties && r.properties.property_owners && r.properties.property_owners[0];
       const Q = quoteState((qev || []).filter((e) => e.repair_id === r.id), (own && own.landlords && own.landlords.approval_limit_pence) || 25000);
       if (Q.stage === 'staff') { add(1, 'Repairs', 'Approve the quote: ' + money(Q.amount) + ', ' + a, Q.quote.detail.work || r.category, href); return true; }
-      if (Q.stage === 'landlord') { add(daysOpen(Q.quote.at) >= 2 ? 1 : 2, 'Repairs', 'Waiting for the landlord: ' + money(Q.amount) + ' quote, ' + a, 'Above their limit. Chase them if no answer', href); return true; }
+      if (Q.stage === 'landlord') { awaitingLandlord.push({ href, address: a, amount: Q.amount }); add(daysOpen(Q.quote.at) >= 2 ? 1 : 2, 'Repairs', 'Waiting for the landlord: ' + money(Q.amount) + ' quote, ' + a, 'Above their limit. Chase them if no answer', href); return true; }
       if (Q.stage === 'declined') { add(1, 'Repairs', 'Quote declined: ' + r.category + ', ' + a, 'Get another price or release the contractor', href); return true; }
       return false; })()) {}
     else if (r.status === 'assigned' && pastTarget(r)) add(1, 'Repairs', 'Chase the contractor: ' + r.category + ', ' + a, 'Past the ' + PRIORITY[r.priority].days + '-day target', href);
-    else if (r.status === 'invoiced') add(1, 'Repairs', (r.verified_at ? 'Approve the invoice: ' : 'Check it\'s fixed: ') + r.category + ', ' + a, statusLabel(r)[1], href);
+    else if (r.status === 'invoiced') {
+      if (r.verified_at) invoicesToApprove.push({ href, address: a, category: r.category });
+      add(1, 'Repairs', (r.verified_at ? 'Approve the invoice: ' : 'Check it\'s fixed: ') + r.category + ', ' + a, statusLabel(r)[1], href);
+    }
     else if (r.status === 'approved') add(1, 'Repairs', 'Pay the contractor: ' + r.category + ', ' + a, 'Invoice approved', href);
   }
   for (const t of T) {
@@ -69,8 +73,19 @@ export default async function Today() {
     <>
       <TopBar here="/today" />
       <div className="pagehead"><h1>Today</h1><span className="sub">{now} · {items.filter((i) => i.level === 0).length} to do now, {items.filter((i) => i.level === 1).length} this week</span></div>
+      <div className="grid2" aria-label="Approvals overview">
+        {[
+          ['invoices-to-approve', 'Invoices to approve', invoicesToApprove, 'Work checked and ready for your approval'],
+          ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord, 'Quotes waiting for the landlord’s decision']
+        ].map(([id, title, queue, description]) => (
+          <Link key={id} href={'#' + id} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div className="row"><b>{title}</b><span className={'pill ' + (queue.length ? 'due' : 'ok')}>{queue.length}</span></div>
+            <span className="muted small">{queue.length ? description : 'Nothing waiting'}</span>
+          </Link>
+        ))}
+      </div>
       {!items.length && <div className="card"><b>Nothing needs doing.</b><span className="muted">Everything is up to date.</span></div>}
-      {groups.map(([lv, title, sub]) => { const list = items.filter((i) => i.level === lv); if (!list.length) return null;
+      {groups.map(([lv, title, sub]) => { const list = items.filter((i) => i.level === lv && !invoicesToApprove.some((job) => job.href === i.href) && !awaitingLandlord.some((job) => job.href === i.href)); if (!list.length) return null;
         return (<div key={lv} className="stack" style={{ gap: 8 }}>
           <div className="row"><h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2><span className="muted small">{sub}</span></div>
           {list.map((i, n) => (
@@ -79,6 +94,21 @@ export default async function Today() {
               <b>{i.text}</b><span className="small">{i.sub}</span>
             </Link>))}
         </div>); })}
+      {[
+        ['invoices-to-approve', 'Invoices to approve', invoicesToApprove],
+        ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord]
+      ].map(([id, title, queue]) => (
+        <section key={id} id={id} className="stack" style={{ gap: 8, scrollMarginTop: 24 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
+          {!queue.length && <p className="muted small">Nothing waiting.</p>}
+          {queue.map((job) => (
+            <Link key={job.href} href={job.href} className="card" style={{ textDecoration: 'none', color: 'inherit', gap: 2 }}>
+              <b>{job.address}</b>
+              <span className="small">{job.amount != null ? money(job.amount) + ' quote · Review and chase permission' : job.category + ' · Review invoice'}</span>
+            </Link>
+          ))}
+        </section>
+      ))}
     </>
   );
 }
