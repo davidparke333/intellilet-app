@@ -22,15 +22,12 @@ export async function endPortfolioPreview() {
   (await cookies()).delete('portfolio_preview');
   redirect('/access');
 }
-export async function assignProperty(fd) {
-  const { sb, member } = await manager();
-  const propertyId = String(fd.get('property_id') || ''), staffId = String(fd.get('staff_id') || '');
-  if (staffId) {
-    const { data, error } = await sb.from('staff_profiles').select('id').eq('id', staffId).eq('agency_id', member.agency_id).eq('active', true).maybeSingle();
-    if (error || !data) back('Choose an active member of this agency', true);
-  }
-  const { data, error } = await sb.from('properties').update({ portfolio_staff_id: staffId || null }).eq('id', propertyId).eq('agency_id', member.agency_id).is('archived_at', null).select('id').maybeSingle();
-  if (error || !data) back('Assignment was not saved' + (error ? ': ' + error.message : ''), true);
+export async function assignLandlord(fd) {
+  await manager();
+  const { sb } = await currentMember();
+  const landlordId = String(fd.get('landlord_id') || ''), staffId = String(fd.get('staff_id') || '');
+  const { error } = await sb.rpc('assign_landlord_portfolio', { p_landlord: landlordId, p_staff: staffId || null });
+  if (error) back('Landlord portfolio was not saved: ' + error.message, true);
   revalidatePath('/'); revalidatePath('/today'); revalidatePath('/team'); revalidatePath('/access');
-  back('Portfolio assignment saved');
+  back('Whole landlord portfolio assigned, including any shared ownership group');
 }
