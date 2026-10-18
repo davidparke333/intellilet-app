@@ -50,25 +50,46 @@ export default async function Portal({ searchParams }) {
     const tab = ['history', 'money'].includes(sp.t) ? sp.t : 'home';
     const finished = (reps || []).filter((r) => plain(r)[1] === 'Fixed' || r.status === 'cancelled');
     const addr = Object.fromEntries((props || []).map((p) => [p.id, p.address_line1]));
-    return (<>
+    const portfolio = props || [];
+    const activeRepairs = (reps || []).filter((r) => ['reported', 'assigned'].includes(r.status) || (r.status === 'invoiced' && !r.verified_at));
+    const approvals = (reps || []).filter((r) => r.status === 'assigned' && quoteState((lev || []).filter((e) => e.repair_id === r.id), cap).stage === 'landlord');
+    const monthlyRent = (tens || []).filter((t) => t.status === 'active').reduce((sum, t) => sum + Number(t.rent_pence || 0), 0);
+    const needsCheck = (p) => CERTS.filter((c) => c.basis === 'law').some((c) => !certStatus(c, (certs || []).find((x) => x.property_id === p.id && x.kind === c.key)).ok);
+    const checkCount = portfolio.filter(needsCheck).length;
+    const q = String(sp.q || '').trim().slice(0, 80);
+    const filter = ['attention', 'repairs'].includes(sp.filter) ? sp.filter : 'all';
+    const visible = portfolio.filter((p) => (p.address_line1 + ' ' + p.postcode).toLowerCase().includes(q.toLowerCase()) && (filter === 'all' || (filter === 'attention' ? needsCheck(p) || approvals.some((r) => r.property_id === p.id) : activeRepairs.some((r) => r.property_id === p.id))));
+    return (<div className="landlord-dashboard">
       <Head name={name} agency={agency} role="Landlord" preview={member.preview} />
-      <div className="pagehead"><h1>Your properties</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
+      <div className="pagehead"><span className="portfolio-eyebrow">YOUR PORTFOLIO</span><h1>Your properties, at a glance</h1><span className="sub">Safety checks, repairs, inspections and money, kept up to date by {agency}.</span></div>
       {saved}
       <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[['home', 'Properties'], ['history', 'Repair history' + (finished.length ? ' (' + finished.length + ')' : '')], ['money', 'Money']].map(([k, l]) => <Link key={k} href={k === 'home' ? '/portal' : '/portal?t=' + k} className={'btn small ' + (tab === k ? '' : 'ghost')}>{l}</Link>)}
       </nav>
       {tab === 'home' && <>
-      {(props || []).map((p) => {
+      <div className="portfolio-stats">
+        {[['Properties', portfolio.length, 'In your portfolio'], ['Monthly rent', money(monthlyRent), 'Scheduled for active tenancies'], ['Active repairs', activeRepairs.length, 'Being handled by your agency'], ['Your decisions', approvals.length, 'Quotes awaiting your permission']].map(([label, value, hint]) => <div className="portfolio-stat" key={label}><span className="muted small">{label}</span><strong>{value}</strong><span className="muted small">{hint}</span></div>)}
+      </div>
+      {(approvals.length > 0 || checkCount > 0) && <section className="portfolio-attention"><div><h2>Needs attention</h2><p>{approvals.length} quote{approvals.length === 1 ? '' : 's'} awaiting your permission · {checkCount} propert{checkCount === 1 ? 'y' : 'ies'} with a legal check to review.</p><span className="small">Your agency will contact you about quote decisions.</span></div><Link href="/portal?filter=attention#portfolio-properties" className="btn small">Review properties</Link></section>}
+      <form action="/portal" method="get" className="portfolio-tools" id="portfolio-properties">
+        <div><h2>Your properties</h2><span className="muted small">Showing {visible.length} of {portfolio.length}</span></div>
+        <input type="search" name="q" defaultValue={q} placeholder="Search address or postcode" aria-label="Search your properties" />
+        <select name="filter" defaultValue={filter} aria-label="Filter properties"><option value="all">All properties</option><option value="attention">Needs attention</option><option value="repairs">Active repairs</option></select><button className="btn small">Find</button>
+      </form>
+      <div className="portfolio-grid">
+      {visible.map((p) => {
         const st = CERTS.map((c) => ({ c, s: certStatus(c, (certs || []).find((x) => x.property_id === p.id && x.kind === c.key)) }));
         const legalOk = st.filter((x) => x.c.basis === 'law').every((x) => x.s.ok);
         const open = (reps || []).filter((r) => r.property_id === p.id && !['paid', 'cancelled'].includes(r.status) && !(r.status === 'invoiced' && r.verified_at) && r.status !== 'approved');
         const last = (insps || []).find((i) => i.property_id === p.id), t = (tens || []).find((x) => x.property_id === p.id && x.status !== 'ended');
-        return (<div key={p.id} className="card">
-          <div className="row"><b>{p.address_line1}, {p.postcode}</b><span className={'pill ' + (legalOk ? 'ok' : 'bad')}>{legalOk ? 'All legal checks in date' : 'Legal check needs attention'}</span></div>
-          <span className="muted small">{t ? (t.status === 'pending' ? 'Tenant moving in ' + fmt(t.start_date) : 'Let') + ' · ' + money(t.rent_pence) + ' a month' : 'Vacant'}</span>
+        return (<div key={p.id} className="card portfolio-property">
+          <div className="portfolio-property-head"><span className="portfolio-house" aria-hidden="true">⌂</span><div><h3>{p.address_line1}</h3><span className="muted small">{p.postcode}</span></div></div>
+          <div><span className={'pill ' + (legalOk ? 'ok' : 'bad')}>{legalOk ? 'All legal checks in date' : 'Legal check needs attention'}</span></div>
+          <span className="portfolio-rent">{t ? (t.status === 'pending' ? 'Tenant moving in ' + fmt(t.start_date) : 'Let') + ' · ' + money(t.rent_pence) + ' a month' : 'Vacant'}</span>
+          <div className="row small portfolio-repair-count"><span>Repairs in progress</span><b>{open.length}</b></div>
+          <details className="more portfolio-details"><summary>View property details</summary>
           <details className="more"><summary>Safety certificates</summary>
             {st.map(({ c, s }) => <div key={c.key} className="row small"><span>{c.label}{c.basis === 'policy' ? ' (our schedule)' : ''}</span><span className={'pill ' + s.cls}>{s.text}</span></div>)}</details>
-          <div className="row small"><span>Repairs in progress</span><b>{open.length}</b></div>
           {open.map((r) => { const pl = quoteNote(r) || plain(r), D = r.is_damp ? dampStages(r) : null; return (
             <div key={r.id} className="stack small" style={{ gap: 2, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
               <div className="row"><span>{r.category}: {r.description.slice(0, 70)}</span><span className={'pill ' + pl[0]}>{pl[1]}</span></div>
@@ -76,7 +97,10 @@ export default async function Portal({ searchParams }) {
               <span className="muted">Reported {fmt(String(r.reported_at).slice(0, 10))}{D && D.next ? ' · damp and mould legal step: ' + D.next.label.toLowerCase() + ', ' + D.next.st.text.toLowerCase() : ''}</span></div>); })}
           <span className="small">{last ? <>Last inspected {fmt(last.inspected_on)} · <Link href={'/portal/report/' + last.id}>Inspection report</Link></> : 'Not inspected yet'}</span>
           <Link href={'/portal/compliance/' + p.id} className="btn ghost small">Compliance record (view or print)</Link>
+          </details>
         </div>); })}
+      </div>
+      {!visible.length && portfolio.length > 0 && <div className="card">No matching properties. Try another search or filter.</div>}
       {!(props || []).length && <div className="card"><span className="muted">No properties are linked to your account yet.</span></div>}
       </>}
       {tab === 'history' && <div className="card"><h3>Repair history</h3>
@@ -95,7 +119,7 @@ export default async function Portal({ searchParams }) {
         <div className="row"><h3>Money</h3><b>{money(bal ? bal.balance_pence : 0)} held for you</b></div>
         <span className="muted small">Held in our client account: rent received, less our fee and any repairs.</span>
         <Link href={'/portal/statement/' + ll.id} className="btn ghost small">Monthly statements</Link></div>}
-    </>);
+    </div>);
   }
 
   // ---------------- tenant ----------------

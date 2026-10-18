@@ -165,3 +165,31 @@ input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height:
 .tri .tribtn.p.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .tri .tribtn.f.on { background: var(--bad-ink); color: var(--surface); border-color: var(--bad-ink); }
 .tri .tribtn.n.on { background: var(--muted); color: var(--surface); border-color: var(--muted); }
+
+/* Landlord portfolio: wide on desktop, stacked on phones. */
+.app:has(.landlord-dashboard) { max-width: 1200px; }
+.landlord-dashboard { display: flex; flex-direction: column; gap: 24px; min-width: 0; padding-block: 8px; }
+.landlord-dashboard .pagehead h1 { font-size: clamp(26px, 4vw, 38px); }
+.portfolio-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .15em; margin-bottom: 6px; }
+.portfolio-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.portfolio-stat { padding: 22px; border: 1px solid var(--line); background: var(--surface); border-radius: 16px; display: flex; flex-direction: column; gap: 8px; }
+.portfolio-stat strong { font-family: var(--display); font-size: clamp(24px,3vw,32px); overflow-wrap: anywhere; }
+.portfolio-attention { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 16px; background: var(--surface); }
+.portfolio-attention h2, .portfolio-tools h2 { margin: 0; }
+.portfolio-attention p { margin: 6px 0; }
+.portfolio-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; scroll-margin-top: 20px; }
+.portfolio-tools > div { margin-right: auto; }
+.portfolio-tools input { width: 260px; }
+.portfolio-tools select { width: auto; }
+.portfolio-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; align-items: start; }
+.portfolio-property { padding: 22px; gap: 16px; min-width: 0; }
+.portfolio-property-head { display: flex; align-items: center; gap: 12px; }
+.portfolio-property-head h3 { overflow-wrap: anywhere; }
+.portfolio-house { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border-radius: 12px; background: var(--bg); color: var(--accent); font-size: 30px; }
+.portfolio-rent { font-weight: 600; }
+.portfolio-repair-count { border-top: 1px solid var(--line); padding-top: 14px; }
+.portfolio-details[open] { display: flex; flex-direction: column; gap: 14px; }
+.portfolio-property .pill { white-space: normal; }
+.portfolio-property .row { flex-wrap: wrap; }
+@media (max-width: 1000px) { .portfolio-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .portfolio-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 600px) { .landlord-dashboard { gap: 18px; } .portfolio-grid { grid-template-columns: minmax(0,1fr); gap: 14px; } .portfolio-stat { padding: 16px; } .portfolio-stats { gap: 10px; } .portfolio-attention { align-items: stretch; flex-direction: column; padding: 18px; } .portfolio-tools input { width: 100%; } .portfolio-tools select { flex: 1; min-width: 0; } .portfolio-tools > div { width: 100%; } .landlord-dashboard .topbar { flex-wrap: wrap; gap: 12px; } }
