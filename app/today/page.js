@@ -73,7 +73,7 @@ export default async function Today() {
     <>
       <TopBar here="/today" />
       <div className="pagehead"><h1>Today</h1><span className="sub">{now} · {items.filter((i) => i.level === 0).length} to do now, {items.filter((i) => i.level === 1).length} this week</span></div>
-      <div className="grid2" aria-label="Approvals overview">
+      <div className="grid2" aria-label="Approvals overview" style={{ alignItems: 'stretch', gridAutoRows: '1fr' }}>
         {[
           ['invoices-to-approve', 'Invoices to approve', invoicesToApprove, 'Work checked and ready for your approval'],
           ['awaiting-landlord', 'Awaiting landlord permission', awaitingLandlord, 'Quotes waiting for the landlord’s decision']
